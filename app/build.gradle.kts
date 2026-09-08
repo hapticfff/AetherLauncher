@@ -44,5 +44,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.tukaani:xz:1.10")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
