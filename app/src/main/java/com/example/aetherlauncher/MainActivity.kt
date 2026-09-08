@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
         Screen.VERSIONS -> VersionsScreen(selectedVersion, selectedProfile, { screen = Screen.HOME }) { version, profile -> selectedVersion = version; selectedProfile = profile; screen = Screen.HOME }
         Screen.MODS -> ModsScreen(selectedVersion) { screen = Screen.HOME }
         Screen.CONTROLS -> ControlsScreen { screen = Screen.HOME }
-        Screen.RENDERING -> RenderingScreen(selectedRenderer) { renderer -> selectedRenderer = renderer; rendererStore.set(renderer) } { screen = Screen.HOME }
+        Screen.RENDERING -> RenderingScreen(selectedRenderer, { renderer -> selectedRenderer = renderer; rendererStore.set(renderer) }, { screen = Screen.HOME })
     }
 
     if (showAccountDialog) AccountDialog(accounts, selectedAccount, { accountStore.select(it.id); selectedAccount = it; showAccountDialog = false }, { showAccountDialog = false })
