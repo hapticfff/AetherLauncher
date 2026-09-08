@@ -11,7 +11,8 @@ import kotlin.concurrent.thread
 /** Runs the Android Java runtime through its JLI entry point instead of execve(). */
 class NativeJavaProcess(
     runtimeDirectory: String,
-    arguments: List<String>
+    arguments: List<String>,
+    renderer: String = "Auto"
 ) : Process() {
     companion object {
         init {
@@ -21,11 +22,15 @@ class NativeJavaProcess(
 
     private val result = AtomicInteger(Int.MIN_VALUE)
     private val worker = thread(name = "Aether-Java", start = true) {
-        val code = nativeLaunch(runtimeDirectory, arguments.toTypedArray())
+        val code = nativeLaunch(runtimeDirectory, arguments.toTypedArray(), renderer)
         result.set(code)
     }
 
-    private external fun nativeLaunch(runtimeDirectory: String, arguments: Array<String>): Int
+    private external fun nativeLaunch(
+        runtimeDirectory: String,
+        arguments: Array<String>,
+        renderer: String
+    ): Int
 
     override fun getOutputStream(): OutputStream = ByteArrayOutputStream()
     override fun getInputStream(): InputStream = ByteArrayInputStream(ByteArray(0))
