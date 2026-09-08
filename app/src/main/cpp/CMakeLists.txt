@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(aetherlauncher)
 
+# Phase 4.2: native Android OpenGL ES/EGL and Vulkan surface bridge.
 add_library(aetherlauncher SHARED
     native_launcher.cpp
     renderer_bridge.cpp
