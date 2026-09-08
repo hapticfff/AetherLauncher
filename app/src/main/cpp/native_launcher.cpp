@@ -125,8 +125,9 @@ static void preloadRuntimeLibrary(
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_example_aetherlauncher_runtime_NativeJavaProcess_nativeLaunch(
-    JNIEnv *env, jobject, jstring runtimeDirectory, jobjectArray arguments) {
+    JNIEnv *env, jobject, jstring runtimeDirectory, jobjectArray arguments, jstring renderer) {
     const std::string runtime = jstringToString(env, runtimeDirectory);
+    const std::string selectedRenderer = jstringToString(env, renderer);
     const std::string javaExecutable = runtime + "/bin/java";
     const std::string jliPath = findJliLibrary(runtime);
 
@@ -138,6 +139,24 @@ Java_com_example_aetherlauncher_runtime_NativeJavaProcess_nativeLaunch(
     setenv("JAVA_HOME", runtime.c_str(), 1);
     configureLibraryPath(runtime, jliPath);
     setenv("PATH", (runtime + "/bin:" + (getenv("PATH") ? getenv("PATH") : "")).c_str(), 1);
+
+    // Renderer selection is exported for the future LWJGL/GLFW Android bridge.
+    // Pojav-compatible POJAV_RENDERER is also set so compatible renderer layers can consume it.
+    if (!selectedRenderer.empty()) {
+        setenv("AETHER_RENDERER", selectedRenderer.c_str(), 1);
+        if (selectedRenderer == "OpenGL") {
+            setenv("POJAV_RENDERER", "opengles3", 1);
+            setenv("LIBGL_ES", "3", 1);
+        } else if (selectedRenderer == "Vulkan") {
+            setenv("POJAV_RENDERER", "opengles3_desktopgl_angle_vulkan", 1);
+            unsetenv("LIBGL_ES");
+        } else {
+            unsetenv("AETHER_RENDERER");
+            unsetenv("POJAV_RENDERER");
+            unsetenv("LIBGL_ES");
+        }
+        __android_log_print(ANDROID_LOG_INFO, "AetherLauncher", "Selected renderer: %s", selectedRenderer.c_str());
+    }
 
     std::vector<void *> handles;
     preloadRuntimeLibrary(runtime, jliPath, "libjli.so", handles);
