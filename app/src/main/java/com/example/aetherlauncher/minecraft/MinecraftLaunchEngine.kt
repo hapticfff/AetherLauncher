@@ -176,10 +176,7 @@ class MinecraftLaunchEngine(private val context: Context) {
             .map(::resolve)
             .filter { it.isNotBlank() }
         command += resolvedJvmArguments
-
-        // LWJGL resolves its GLFW native library from this property. The
-        // Aether native library exports the Android GLFW ABI implemented in
-        // renderer_bridge.cpp, so desktop Linux GLFW is not loaded.
+        command += "-Djava.library.path=${context.applicationInfo.nativeLibraryDir}"
         command += "-Dorg.lwjgl.glfw.libname=aetherlauncher"
 
         if (resolvedJvmArguments.none { it == "-cp" || it == "-classpath" }) {
