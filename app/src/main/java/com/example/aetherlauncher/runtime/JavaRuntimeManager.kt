@@ -5,7 +5,7 @@ import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import org.tukaani.xz.XZCompressorInputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.net.HttpURLConnection
@@ -23,8 +23,7 @@ class JavaRuntimeManager(private val context: Context) {
         else -> Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
     }
 
-    fun runtimeDirectory(majorVersion: Int): File =
-        File(root, "java$majorVersion/${supportedArchitecture()}")
+    fun runtimeDirectory(majorVersion: Int): File = File(root, "java$majorVersion/${supportedArchitecture()}")
 
     fun findInstalled(majorVersion: Int): JavaRuntime? {
         val directory = runtimeDirectory(majorVersion)
@@ -102,8 +101,7 @@ class JavaRuntimeManager(private val context: Context) {
         locateJavaExecutable(staging) ?: error("Java runtime archive does not contain bin/java")
         if (target.exists()) target.deleteRecursively()
         if (!staging.renameTo(target)) error("Unable to install Java runtime")
-        val installedJava = locateJavaExecutable(target)
-            ?: error("Installed Java runtime is missing bin/java")
+        val installedJava = locateJavaExecutable(target) ?: error("Installed Java runtime is missing bin/java")
         installedJava.setExecutable(true, false)
         onProgress(JavaRuntimeProgress("Java $majorVersion ready"))
         return JavaRuntime(majorVersion, supportedArchitecture(), target.absolutePath, installedJava.absolutePath, true)
@@ -134,9 +132,7 @@ class JavaRuntimeManager(private val context: Context) {
                     while (true) {
                         val entry = tar.nextTarEntry ?: break
                         val output = safeArchivePath(destination, entry.name)
-                        if (entry.isDirectory) {
-                            output.mkdirs()
-                        } else {
+                        if (entry.isDirectory) output.mkdirs() else {
                             output.parentFile?.mkdirs()
                             output.outputStream().use { tar.copyTo(it) }
                         }
@@ -149,18 +145,11 @@ class JavaRuntimeManager(private val context: Context) {
     private fun safeArchivePath(destination: File, entryName: String): File {
         val base = destination.canonicalFile
         val output = File(base, entryName).canonicalFile
-        require(output.path == base.path || output.path.startsWith(base.path + File.separator)) {
-            "Unsafe runtime archive path"
-        }
+        require(output.path == base.path || output.path.startsWith(base.path + File.separator)) { "Unsafe runtime archive path" }
         return output
     }
 
-    private fun download(
-        url: String,
-        target: File,
-        expectedSha256: String?,
-        progress: (Long, Long) -> Unit
-    ) {
+    private fun download(url: String, target: File, expectedSha256: String?, progress: (Long, Long) -> Unit) {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 15_000
