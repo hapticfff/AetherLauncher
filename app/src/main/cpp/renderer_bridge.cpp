@@ -387,65 +387,127 @@ extern "C" void* glfwCreateWindow(int width, int height, const char* title, void
         delete result;
         return nullptr;
     }
+    if (!eglMakeCurrent(gDisplay, result->surface, result->surface, gContext)) {
+        eglDestroySurface(gDisplay, result->surface);
+        ANativeWindow_release(result->window);
+        delete result;
+        return nullptr;
+    }
     gCurrentWindow = result;
-    eglMakeCurrent(gDisplay, result->surface, result->surface, gContext);
     return result;
 }
 
-extern "C" void glfwDestroyWindow(void* window) {
+extern "C" void glfwDestroyWindow(void* handle) {
     std::lock_guard<std::mutex> lock(gMutex);
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    if (!result) return;
-    if (result->display != EGL_NO_DISPLAY && result->surface != EGL_NO_SURFACE) {
-        eglMakeCurrent(result->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglDestroySurface(result->display, result->surface);
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    if (!window) return;
+    if (window->display != EGL_NO_DISPLAY && window->surface != EGL_NO_SURFACE) {
+        eglMakeCurrent(window->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        eglDestroySurface(window->display, window->surface);
     }
-    if (result->window) ANativeWindow_release(result->window);
-    if (gCurrentWindow == result) gCurrentWindow = nullptr;
-    delete result;
+    if (window->window) ANativeWindow_release(window->window);
+    if (window == gCurrentWindow) gCurrentWindow = nullptr;
+    delete window;
 }
 
-extern "C" int glfwWindowShouldClose(void* window) {
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    return result && result->shouldClose ? 1 : 0;
-}
-extern "C" void glfwSetWindowShouldClose(void* window, int value) {
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    if (result) result->shouldClose = value != 0;
-}
-extern "C" void glfwSetWindowTitle(void* window, const char* title) {
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    if (result && title) result->title = title;
-}
-extern "C" const char* glfwGetWindowTitle(void* window) {
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    return result ? result->title.c_str() : "";
-}
-extern "C" void glfwMakeContextCurrent(void* window) {
+extern "C" void glfwMakeContextCurrent(void* handle) {
     std::lock_guard<std::mutex> lock(gMutex);
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    if (!result) {
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    if (!window) {
         if (gDisplay != EGL_NO_DISPLAY) eglMakeCurrent(gDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         return;
     }
-    eglMakeCurrent(result->display, result->surface, result->surface, result->context);
-}
-extern "C" void* glfwGetCurrentContext() { return gCurrentWindow; }
-extern "C" void glfwSwapBuffers(void* window) {
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    if (result) eglSwapBuffers(result->display, result->surface);
-}
-extern "C" void glfwSwapInterval(int interval) {
-    if (gDisplay != EGL_NO_DISPLAY) eglSwapInterval(gDisplay, interval);
+    eglMakeCurrent(window->display, window->surface, window->surface, window->context);
 }
 
-static int androidToGlfwKey(int keyCode) {
+extern "C" void* glfwGetCurrentContext() { return gCurrentWindow; }
+extern "C" void glfwSwapBuffers(void* handle) {
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    if (!window) return;
+    eglSwapBuffers(window->display, window->surface);
+}
+extern "C" void glfwSwapInterval(int interval) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    if (gDisplay != EGL_NO_DISPLAY) eglSwapInterval(gDisplay, interval);
+}
+extern "C" int glfwWindowShouldClose(void* handle) {
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    return window && window->shouldClose ? 1 : 0;
+}
+extern "C" void glfwSetWindowShouldClose(void* handle, int value) {
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    if (window) window->shouldClose = value != 0;
+}
+extern "C" void glfwPollEvents() {
+    std::deque<InputEvent> events;
+    {
+        std::lock_guard<std::mutex> lock(gMutex);
+        events.swap(gInputQueue);
+    }
+    (void)events;
+}
+extern "C" double glfwGetTime() {
+    const auto elapsed = std::chrono::steady_clock::now() - gTimerStart;
+    return std::chrono::duration<double>(elapsed).count();
+}
+extern "C" void glfwSetTime(double value) {
+    gTimerStart = std::chrono::steady_clock::now() - std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(value));
+}
+extern "C" void glfwGetFramebufferSize(void* handle, int* width, int* height) {
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    if (!window) return;
+    if (width) *width = ANativeWindow_getWidth(window->window);
+    if (height) *height = ANativeWindow_getHeight(window->window);
+}
+extern "C" void glfwGetWindowSize(void* handle, int* width, int* height) {
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    if (!window) return;
+    if (width) *width = window->width;
+    if (height) *height = window->height;
+}
+extern "C" void glfwGetWindowPos(void*, int* x, int* y) { if (x) *x = 0; if (y) *y = 0; }
+extern "C" void glfwSetWindowPos(void*, int, int) {}
+extern "C" void glfwSetWindowSize(void* handle, int width, int height) {
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    if (!window) return;
+    window->width = width;
+    window->height = height;
+}
+extern "C" void glfwSetWindowTitle(void* handle, const char* title) {
+    auto* window = static_cast<AetherGlfwWindow*>(handle);
+    if (window) window->title = title ? title : "Minecraft";
+}
+extern "C" const char* glfwGetClipboardString(void*) { return nullptr; }
+extern "C" void glfwSetClipboardString(void*, const char*) {}
+extern "C" GLFWmonitor* glfwGetPrimaryMonitor() { return &gPrimaryMonitor; }
+extern "C" GLFWmonitor** glfwGetMonitors(int* count) { if (count) *count = 1; static GLFWmonitor* monitors[] = {&gPrimaryMonitor}; return monitors; }
+extern "C" const GLFWvidmode* glfwGetVideoMode(GLFWmonitor*) { return &gVideoMode; }
+extern "C" void glfwGetMonitorPhysicalSize(GLFWmonitor*, int* width, int* height) { if (width) *width = 340; if (height) *height = 76; }
+extern "C" void glfwGetMonitorPos(GLFWmonitor*, int* x, int* y) { if (x) *x = 0; if (y) *y = 0; }
+extern "C" const char* glfwGetMonitorName(GLFWmonitor*) { return "Android Display"; }
+extern "C" void glfwSetWindowMonitor(void* handle, GLFWmonitor*, int, int, int width, int height, int) { glfwSetWindowSize(handle, width, height); }
+extern "C" void glfwIconifyWindow(void*) {}
+extern "C" void glfwRestoreWindow(void*) {}
+extern "C" void glfwMaximizeWindow(void*) {}
+extern "C" int glfwGetWindowAttrib(void*, int) { return 0; }
+extern "C" void glfwSetInputMode(void*, int, int) {}
+extern "C" int glfwGetInputMode(void*, int) { return 0; }
+extern "C" void* glfwSetKeyCallback(void*, void* callback) { void* previous = gKeyCallback; gKeyCallback = callback; return previous; }
+extern "C" void* glfwSetCharCallback(void*, void* callback) { void* previous = gCharCallback; gCharCallback = callback; return previous; }
+extern "C" void* glfwSetMouseButtonCallback(void*, void* callback) { void* previous = gMouseButtonCallback; gMouseButtonCallback = callback; return previous; }
+extern "C" void* glfwSetCursorPosCallback(void*, void* callback) { void* previous = gCursorPosCallback; gCursorPosCallback = callback; return previous; }
+extern "C" void* glfwSetScrollCallback(void*, void* callback) { void* previous = gScrollCallback; gScrollCallback = callback; return previous; }
+extern "C" void* glfwSetWindowFocusCallback(void*, void* callback) { void* previous = gWindowFocusCallback; gWindowFocusCallback = callback; return previous; }
+extern "C" void* glfwSetWindowSizeCallback(void*, void* callback) { void* previous = gWindowSizeCallback; gWindowSizeCallback = callback; return previous; }
+extern "C" void* glfwSetFramebufferSizeCallback(void*, void* callback) { void* previous = gFramebufferSizeCallback; gFramebufferSizeCallback = callback; return previous; }
+
+static int androidKeyToGlfw(int keyCode) {
     switch (keyCode) {
-        case AKEYCODE_BACK: return 256;
+        case AKEYCODE_UNKNOWN: return -1;
+        case AKEYCODE_ESCAPE: return 256;
         case AKEYCODE_ENTER: return 257;
         case AKEYCODE_TAB: return 258;
-        case AKEYCODE_BACKSLASH: return 92;
-        case AKEYCODE_DEL: return 259;
+        case AKEYCODE_BACK: return 259;
         case AKEYCODE_INSERT: return 260;
         case AKEYCODE_FORWARD_DEL: return 261;
         case AKEYCODE_DPAD_RIGHT: return 262;
@@ -467,7 +529,7 @@ static int androidToGlfwKey(int keyCode) {
         case AKEYCODE_NUMPAD_0: return 320; case AKEYCODE_NUMPAD_1: return 321; case AKEYCODE_NUMPAD_2: return 322;
         case AKEYCODE_NUMPAD_3: return 323; case AKEYCODE_NUMPAD_4: return 324; case AKEYCODE_NUMPAD_5: return 325;
         case AKEYCODE_NUMPAD_6: return 326; case AKEYCODE_NUMPAD_7: return 327; case AKEYCODE_NUMPAD_8: return 328; case AKEYCODE_NUMPAD_9: return 329;
-        case AKEYCODE_NUMPAD_DECIMAL: return 330;
+        case AKEYCODE_NUMPAD_DOT: return 330;
         case AKEYCODE_NUMPAD_ENTER: return 335;
         case AKEYCODE_NUMPAD_ADD: return 334;
         case AKEYCODE_NUMPAD_SUBTRACT: return 333;
@@ -478,175 +540,45 @@ static int androidToGlfwKey(int keyCode) {
         case AKEYCODE_EQUALS: return 61;
         case AKEYCODE_LEFT_BRACKET: return 91;
         case AKEYCODE_RIGHT_BRACKET: return 93;
+        case AKEYCODE_BACKSLASH: return 92;
         case AKEYCODE_SEMICOLON: return 59;
         case AKEYCODE_APOSTROPHE: return 39;
         case AKEYCODE_COMMA: return 44;
         case AKEYCODE_PERIOD: return 46;
         case AKEYCODE_SLASH: return 47;
         case AKEYCODE_GRAVE: return 96;
-        case AKEYCODE_SHIFT_LEFT: case AKEYCODE_SHIFT_RIGHT: return 340;
-        case AKEYCODE_CTRL_LEFT: case AKEYCODE_CTRL_RIGHT: return 341;
-        case AKEYCODE_ALT_LEFT: case AKEYCODE_ALT_RIGHT: return 342;
-        case AKEYCODE_META_LEFT: case AKEYCODE_META_RIGHT: return 343;
-        case AKEYCODE_ESCAPE: return 256;
-        default: break;
-    }
-    if (keyCode >= AKEYCODE_A && keyCode <= AKEYCODE_Z) return 'A' + (keyCode - AKEYCODE_A);
-    if (keyCode >= AKEYCODE_0 && keyCode <= AKEYCODE_9) return '0' + (keyCode - AKEYCODE_0);
-    return -1;
-}
-
-static int androidMetaToGlfw(int metaState) {
-    int mods = 0;
-    if (metaState & 0x1) mods |= 1;
-    if (metaState & 0x1000) mods |= 2;
-    if (metaState & 0x2) mods |= 4;
-    if (metaState & 0x10000) mods |= 8;
-    return mods;
-}
-
-static void dispatchInputLocked(const InputEvent& event) {
-    if (!gCurrentWindow) return;
-    if (event.type == InputEvent::Touch) {
-        auto callback = reinterpret_cast<void(*)(void*, int, int, int)>(gMouseButtonCallback);
-        auto cursor = reinterpret_cast<void(*)(void*, double, double)>(gCursorPosCallback);
-        if (cursor) cursor(gCurrentWindow, event.x, event.y);
-        if (callback && event.action != 2) {
-            const int action = event.action == 0 ? 1 : 0;
-            callback(gCurrentWindow, 0, action, 0);
-        }
-    } else if (event.type == InputEvent::Key) {
-        const int key = androidToGlfwKey(event.code);
-        if (key >= 0) {
-            auto callback = reinterpret_cast<void(*)(void*, int, int, int, int)>(gKeyCallback);
-            if (callback) callback(gCurrentWindow, key, event.scanCode, event.action, androidMetaToGlfw(event.metaState));
-        }
-    } else if (event.type == InputEvent::Character) {
-        auto callback = reinterpret_cast<void(*)(void*, unsigned int)>(gCharCallback);
-        if (callback) callback(gCurrentWindow, static_cast<unsigned int>(event.code));
-    } else if (event.type == InputEvent::Scroll) {
-        auto callback = reinterpret_cast<void(*)(void*, double, double)>(gScrollCallback);
-        if (callback) callback(gCurrentWindow, event.x, event.y);
-    } else if (event.type == InputEvent::Focus) {
-        auto callback = reinterpret_cast<void(*)(void*, int)>(gWindowFocusCallback);
-        if (callback) callback(gCurrentWindow, event.action);
-    } else if (event.type == InputEvent::Resize) {
-        gCurrentWindow->width = event.width;
-        gCurrentWindow->height = event.height;
-        auto windowCallback = reinterpret_cast<void(*)(void*, int, int)>(gWindowSizeCallback);
-        auto framebufferCallback = reinterpret_cast<void(*)(void*, int, int)>(gFramebufferSizeCallback);
-        if (windowCallback) windowCallback(gCurrentWindow, event.width, event.height);
-        if (framebufferCallback) framebufferCallback(gCurrentWindow, event.width, event.height);
+        case AKEYCODE_SHIFT_LEFT: return 340;
+        case AKEYCODE_SHIFT_RIGHT: return 344;
+        case AKEYCODE_CTRL_LEFT: return 341;
+        case AKEYCODE_CTRL_RIGHT: return 345;
+        case AKEYCODE_ALT_LEFT: return 342;
+        case AKEYCODE_ALT_RIGHT: return 346;
+        case AKEYCODE_META_LEFT: return 343;
+        case AKEYCODE_META_RIGHT: return 347;
+        default:
+            if (keyCode >= AKEYCODE_A && keyCode <= AKEYCODE_Z) return 'A' + (keyCode - AKEYCODE_A);
+            if (keyCode >= AKEYCODE_0 && keyCode <= AKEYCODE_9) return '0' + (keyCode - AKEYCODE_0);
+            return -1;
     }
 }
 
-extern "C" void glfwPollEvents() {
-    std::lock_guard<std::mutex> lock(gMutex);
+static void dispatchQueuedEventsLocked() {
     while (!gInputQueue.empty()) {
         InputEvent event = gInputQueue.front();
         gInputQueue.pop_front();
-        dispatchInputLocked(event);
+        if (!gCurrentWindow) continue;
+        if (event.type == InputEvent::Resize) {
+            gCurrentWindow->width = event.width;
+            gCurrentWindow->height = event.height;
+        }
     }
 }
-extern "C" void glfwWaitEvents() { glfwPollEvents(); }
-extern "C" void glfwWaitEventsTimeout(double) { glfwPollEvents(); }
-extern "C" void glfwPostEmptyEvent() {}
 
-extern "C" void glfwGetWindowSize(void* window, int* width, int* height) {
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    if (width) *width = result ? result->width : 0;
-    if (height) *height = result ? result->height : 0;
+extern "C" void aetherDispatchInput() {
+    std::lock_guard<std::mutex> lock(gMutex);
+    dispatchQueuedEventsLocked();
 }
-extern "C" void glfwGetFramebufferSize(void* window, int* width, int* height) {
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    if (result && result->window) {
-        if (width) *width = ANativeWindow_getWidth(result->window);
-        if (height) *height = ANativeWindow_getHeight(result->window);
-    } else {
-        if (width) *width = 0;
-        if (height) *height = 0;
-    }
-}
-extern "C" void glfwSetWindowSize(void* window, int width, int height) {
-    auto* result = static_cast<AetherGlfwWindow*>(window);
-    if (result) { result->width = width; result->height = height; }
-}
-extern "C" void glfwGetWindowPos(void*, int* x, int* y) { if (x) *x = 0; if (y) *y = 0; }
-extern "C" void glfwSetWindowPos(void*, int, int) {}
-extern "C" void glfwShowWindow(void*) {}
-extern "C" void glfwHideWindow(void*) {}
-extern "C" void glfwFocusWindow(void*) {}
-extern "C" void glfwIconifyWindow(void*) {}
-extern "C" void glfwRestoreWindow(void*) {}
-extern "C" void glfwMaximizeWindow(void*) {}
-extern "C" int glfwGetWindowAttrib(void*, int) { return 1; }
-extern "C" void glfwSetWindowAttrib(void*, int, int) {}
-extern "C" void glfwSetWindowOpacity(void*, float) {}
-extern "C" float glfwGetWindowOpacity(void*) { return 1.0f; }
 
-extern "C" void* glfwGetPrimaryMonitor() { return &gPrimaryMonitor; }
-extern "C" void* glfwGetWindowMonitor(void*) { return nullptr; }
-extern "C" void* glfwGetMonitors(int* count) {
-    static void* monitors[] = {&gPrimaryMonitor};
-    if (count) *count = 1;
-    return monitors;
-}
-extern "C" const GLFWvidmode* glfwGetVideoMode(void*) { return &gVideoMode; }
-extern "C" void glfwGetMonitorPos(void*, int* x, int* y) { if (x) *x = 0; if (y) *y = 0; }
-extern "C" const char* glfwGetMonitorName(void*) { return "Android display"; }
-extern "C" void glfwSetGamma(void*, float) {}
-extern "C" void glfwSetGammaRamp(void*, const void*) {}
-extern "C" const void* glfwGetGammaRamp(void*) { return nullptr; }
-
-extern "C" double glfwGetTime() {
-    return std::chrono::duration<double>(std::chrono::steady_clock::now() - gTimerStart).count();
-}
-extern "C" void glfwSetTime(double time) {
-    gTimerStart = std::chrono::steady_clock::now() - std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(time));
-}
-extern "C" uint64_t glfwGetTimerValue() { return static_cast<uint64_t>(glfwGetTime() * 1000000000.0); }
-extern "C" uint64_t glfwGetTimerFrequency() { return 1000000000ULL; }
-
-extern "C" void glfwSetInputMode(void*, int, int) {}
-extern "C" int glfwGetInputMode(void*, int) { return 0; }
-extern "C" int glfwGetKey(void*, int) { return 0; }
-extern "C" int glfwGetMouseButton(void*, int) { return 0; }
-extern "C" void glfwGetCursorPos(void*, double* x, double* y) { if (x) *x = 0.0; if (y) *y = 0.0; }
-extern "C" void glfwSetCursorPos(void*, double, double) {}
-extern "C" void glfwSetCursor(void*, void*) {}
-extern "C" void* glfwCreateStandardCursor(int) { return nullptr; }
-extern "C" void glfwDestroyCursor(void*) {}
-
-#define AETHER_CALLBACK(name, storage) \
-    extern "C" void* name(void*, void* callback) { void* previous = storage; storage = callback; return previous; }
-AETHER_CALLBACK(glfwSetWindowPosCallback, gWindowSizeCallback)
-AETHER_CALLBACK(glfwSetWindowSizeCallback, gWindowSizeCallback)
-AETHER_CALLBACK(glfwSetWindowCloseCallback, gWindowSizeCallback)
-AETHER_CALLBACK(glfwSetWindowRefreshCallback, gWindowSizeCallback)
-AETHER_CALLBACK(glfwSetWindowFocusCallback, gWindowFocusCallback)
-AETHER_CALLBACK(glfwSetWindowIconifyCallback, gWindowFocusCallback)
-AETHER_CALLBACK(glfwSetFramebufferSizeCallback, gFramebufferSizeCallback)
-AETHER_CALLBACK(glfwSetKeyCallback, gKeyCallback)
-AETHER_CALLBACK(glfwSetCharCallback, gCharCallback)
-AETHER_CALLBACK(glfwSetCharModsCallback, gCharCallback)
-AETHER_CALLBACK(glfwSetMouseButtonCallback, gMouseButtonCallback)
-AETHER_CALLBACK(glfwSetCursorPosCallback, gCursorPosCallback)
-AETHER_CALLBACK(glfwSetCursorEnterCallback, gCursorPosCallback)
-AETHER_CALLBACK(glfwSetScrollCallback, gScrollCallback)
-AETHER_CALLBACK(glfwSetDropCallback, gWindowSizeCallback)
-
-extern "C" int glfwJoystickPresent(int) { return 0; }
-extern "C" const float* glfwGetJoystickAxes(int, int* count) { if (count) *count = 0; return nullptr; }
-extern "C" const unsigned char* glfwGetJoystickButtons(int, int* count) { if (count) *count = 0; return nullptr; }
-extern "C" const char* glfwGetJoystickName(int) { return nullptr; }
-extern "C" void glfwSetClipboardString(void*, const char*) {}
-extern "C" const char* glfwGetClipboardString(void*) { return ""; }
-extern "C" int glfwExtensionSupported(const char*) { return 0; }
-extern "C" void* glfwGetProcAddress(const char* name) {
-    if (!name) return nullptr;
-    void* address = reinterpret_cast<void*>(eglGetProcAddress(name));
-    if (address) return address;
-    static void* gles = nullptr;
-    if (!gles) gles = dlopen("libGLESv3.so", RTLD_NOW | RTLD_LOCAL);
-    return gles ? dlsym(gles, name) : nullptr;
+extern "C" int aetherMapAndroidKey(int keyCode) {
+    return androidKeyToGlfw(keyCode);
 }
