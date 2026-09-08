@@ -10,6 +10,7 @@ import com.example.aetherlauncher.renderer.RendererManager
 import com.example.aetherlauncher.renderer.RendererNative
 import com.example.aetherlauncher.runtime.AndroidRuntimeCatalog
 import com.example.aetherlauncher.runtime.JavaRuntimeManager
+import com.example.aetherlauncher.runtime.LwjglRuntimeInstaller
 import com.example.aetherlauncher.runtime.NativeJavaProcess
 import com.example.aetherlauncher.ui.DownloadProgressOverlay
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,7 @@ class MinecraftLaunchEngine(private val context: Context) {
     private val installer = MinecraftInstaller(context)
     private val resolver = MinecraftJavaResolver()
     private val runtimeManager = JavaRuntimeManager(context)
+    private val lwjglInstaller = LwjglRuntimeInstaller(context)
     private val progressOverlay = (context as? Activity)?.let { DownloadProgressOverlay(it) }
 
     init {
@@ -97,6 +99,9 @@ class MinecraftLaunchEngine(private val context: Context) {
                 "Phase 4.3 Minecraft GLFW bridge currently requires the OpenGL renderer"
             }
 
+            report("Preparing Android LWJGL 3.3.3", force = true)
+            val lwjglDirectory = lwjglInstaller.install()
+
             report("Preparing ${resolvedRenderer.label} renderer", force = true)
             RendererNative.prepareSurface()
             withContext(Dispatchers.Main) {
@@ -110,11 +115,17 @@ class MinecraftLaunchEngine(private val context: Context) {
                 "Timed out waiting for the Android Minecraft renderer surface"
             }
 
-            val process = launchDemo(versionId, metadata, runtime.directory, resolvedRenderer)
+            val process = launchDemo(
+                versionId,
+                metadata,
+                runtime.directory,
+                lwjglDirectory,
+                resolvedRenderer
+            )
 
             Thread.sleep(1_500)
             if (!process.isAlive) {
-                error("Minecraft exited immediately (code ${process.exitValue()}). Check Android logcat for the native Java launcher output.")
+                error("Minecraft exited immediately (code ${process.exitValue()}). Check Android logcat for the LWJGL/native launcher output.")
             }
 
             report("Minecraft process started • ${resolvedRenderer.label}", force = true)
@@ -129,16 +140,26 @@ class MinecraftLaunchEngine(private val context: Context) {
         versionId: String,
         metadata: MinecraftLaunchMetadata,
         runtimeDirectory: String,
+        lwjglDirectory: File,
         renderer: RendererBackend
     ): Process {
         val gameRoot = installer.installationDirectory()
         val versionJar = File(gameRoot, "versions/$versionId/$versionId.jar")
         val libraries = File(gameRoot, "libraries")
         val nativesDirectory = File(gameRoot, "natives/$versionId").apply { mkdirs() }
+        val lwjglNativeDirectory = File(lwjglDirectory, "native/arm64-v8a")
 
         require(versionJar.isFile) { "Minecraft client JAR is missing: ${versionJar.absolutePath}" }
+        require(lwjglNativeDirectory.isDirectory) {
+            "Android LWJGL native runtime is missing for arm64-v8a: ${lwjglNativeDirectory.absolutePath}"
+        }
 
         val classpath = buildList {
+            // The Android LWJGL fork must appear before Mojang's desktop LWJGL jars.
+            lwjglDirectory.listFiles()
+                ?.filter { it.isFile && it.extension.equals("jar", true) }
+                ?.sortedBy { if (it.name == "lwjgl-glfw-classes.jar") 0 else 1 }
+                ?.forEach { add(it.absolutePath) }
             add(versionJar.absolutePath)
             libraries.walkTopDown()
                 .filter {
@@ -176,8 +197,9 @@ class MinecraftLaunchEngine(private val context: Context) {
             .map(::resolve)
             .filter { it.isNotBlank() }
         command += resolvedJvmArguments
-        command += "-Djava.library.path=${context.applicationInfo.nativeLibraryDir}"
-        command += "-Dorg.lwjgl.glfw.libname=aetherlauncher"
+        command += "-Djava.library.path=${lwjglNativeDirectory.absolutePath}"
+        command += "-Dorg.lwjgl.librarypath=${lwjglNativeDirectory.absolutePath}"
+        command += "-Dglfwstub.initEgl=false"
 
         if (resolvedJvmArguments.none { it == "-cp" || it == "-classpath" }) {
             command += "-cp"
