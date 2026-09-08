@@ -26,7 +26,9 @@ static SendScreenFn gSendScreen = nullptr;
 
 static bool resolvePojavLocked() {
     if (gPojavExec) return true;
-    gPojavExec = dlopen("libpojavexec.so", RTLD_NOW | RTLD_GLOBAL);
+    // Never dlopen libpojavexec from the Android/UI JVM. Its JNI_OnLoad expects
+    // the Pojav CallbackBridge class. Only resolve an already-loaded child-JVM copy.
+    gPojavExec = dlopen("libpojavexec.so", RTLD_NOW | RTLD_NOLOAD);
     if (!gPojavExec) return false;
     gSetupBridgeWindow = reinterpret_cast<SetupBridgeWindowFn>(dlsym(gPojavExec, "Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow"));
     gReleaseBridgeWindow = reinterpret_cast<ReleaseBridgeWindowFn>(dlsym(gPojavExec, "Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow"));
