@@ -108,7 +108,7 @@ class MinecraftLaunchEngine(private val context: Context) {
         )
 
         fun resolve(value: String): String = values.entries.fold(value) { current, (key, replacement) ->
-            current.replace("\${'$'}{$key}", replacement)
+            current.replace("\${$key}", replacement)
         }
 
         val command = mutableListOf<String>()
