@@ -10,6 +10,7 @@ data class MinecraftLaunchMetadata(
     val version: String,
     val mainClass: String,
     val javaMajorVersion: Int,
+    val assetIndex: String?,
     val gameArguments: List<String>
 )
 
@@ -30,6 +31,7 @@ class MinecraftJavaResolver {
                 val root = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
                 val javaMajor = root.optJSONObject("javaVersion")?.optInt("majorVersion", 8) ?: 8
                 val mainClass = root.optString("mainClass").ifBlank { "net.minecraft.client.main.Main" }
+                val assetIndex = root.optJSONObject("assetIndex")?.optString("id")?.takeIf { it.isNotBlank() }
                 val arguments = root.optJSONObject("arguments")?.optJSONArray("game")
                 val gameArgs = buildList {
                     if (arguments != null) {
@@ -38,8 +40,7 @@ class MinecraftJavaResolver {
                             when (item) {
                                 is String -> add(item)
                                 is JSONObject -> {
-                                    val rules = item.optJSONArray("rules")
-                                    if (rulesAllow(rules)) {
+                                    if (rulesAllow(item.optJSONArray("rules"))) {
                                         when (val value = item.opt("value")) {
                                             is String -> add(value)
                                             is org.json.JSONArray -> for (j in 0 until value.length()) add(value.getString(j))
@@ -50,7 +51,7 @@ class MinecraftJavaResolver {
                         }
                     }
                 }
-                MinecraftLaunchMetadata(version.id, mainClass, javaMajor, gameArgs)
+                MinecraftLaunchMetadata(version.id, mainClass, javaMajor, assetIndex, gameArgs)
             } finally {
                 connection.disconnect()
             }
