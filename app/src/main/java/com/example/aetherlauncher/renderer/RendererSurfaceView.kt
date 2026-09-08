@@ -6,7 +6,7 @@ import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 
-/** Owns the Android Surface and forwards Android input into the native GLFW bridge. */
+/** Owns the Android Surface and forwards input into the real Pojav/LWJGL GLFW bridge. */
 class RendererSurfaceView(
     context: Context,
     private val renderer: RendererBackend
@@ -19,16 +19,17 @@ class RendererSurfaceView(
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        val attached = RendererNative.attachSurface(holder.surface, renderer.label)
-        if (attached) RendererNative.notifySurfaceCreated()
+        PojavInputNative.bindSurface(holder.surface)
+        RendererNative.notifySurfaceCreated()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        PojavInputNative.unbindSurface()
         RendererNative.detachSurface()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        RendererNative.queueResize(width, height)
+        PojavInputNative.sendResize(width, height)
     }
 
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
@@ -45,15 +46,16 @@ class RendererSurfaceView(
             MotionEvent.ACTION_POINTER_UP,
             MotionEvent.ACTION_CANCEL -> {
                 val index = event.actionIndex.coerceIn(0, event.pointerCount - 1)
-                val pointer = event.getPointerId(index)
-                val x = event.getX(index)
-                val y = event.getY(index)
-                val action = when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> 0
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> 1
-                    else -> 2
-                }
-                RendererNative.queueTouch(action, x, y, pointer)
+                PojavInputNative.sendTouch(
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> 0
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> 1
+                        else -> 2
+                    },
+                    event.getX(index),
+                    event.getY(index),
+                    event.getPointerId(index)
+                )
             }
         }
         return true
@@ -61,7 +63,7 @@ class RendererSurfaceView(
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_SCROLL) {
-            RendererNative.queueScroll(
+            PojavInputNative.sendScroll(
                 event.getAxisValue(MotionEvent.AXIS_HSCROLL),
                 event.getAxisValue(MotionEvent.AXIS_VSCROLL)
             )
@@ -71,20 +73,17 @@ class RendererSurfaceView(
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        RendererNative.queueKey(keyCode, event.scanCode, 1, event.metaState)
-        if (keyCode == KeyEvent.KEYCODE_BACK) return true
+        PojavInputNative.sendKey(keyCode, event.scanCode, 1, event.metaState)
         return true
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        RendererNative.queueKey(keyCode, event.scanCode, 0, event.metaState)
+        PojavInputNative.sendKey(keyCode, event.scanCode, 0, event.metaState)
         return true
     }
 
     override fun onKeyMultiple(keyCode: Int, repeatCount: Int, event: KeyEvent): Boolean {
-        event.characters?.forEach { character ->
-            RendererNative.queueChar(character.code)
-        }
+        event.characters?.forEach { character -> PojavInputNative.sendChar(character.code) }
         return true
     }
 
