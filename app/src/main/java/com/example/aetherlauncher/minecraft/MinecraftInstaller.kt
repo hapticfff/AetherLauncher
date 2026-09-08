@@ -2,6 +2,11 @@ package com.example.aetherlauncher.minecraft
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -10,6 +15,8 @@ import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 class MinecraftInstaller(private val context: Context) {
     companion object {
@@ -17,6 +24,7 @@ class MinecraftInstaller(private val context: Context) {
         private const val INSTALL_COMPLETE_FILE = ".installation-complete"
         private const val VERSION_MANIFEST_URL =
             "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+        private const val MAX_PARALLEL_DOWNLOADS = 6
     }
 
     suspend fun install(
@@ -49,37 +57,62 @@ class MinecraftInstaller(private val context: Context) {
             } else emptyList()
 
             val totalFiles = 1 + libraries.size + assetObjects.size
-            var completed = 0
-            var downloadedBytes = 0L
+            val completed = AtomicInteger(0)
+            val downloadedBytes = AtomicLong(0L)
             val totalBytes = client.optLong("size", 0L) +
                 libraries.sumOf { it.size } + assetObjects.sumOf { it.size }
 
             fun progress(stage: String) {
-                onProgress(InstallationProgress(stage, completed, totalFiles, downloadedBytes, totalBytes))
+                onProgress(
+                    InstallationProgress(
+                        stage,
+                        completed.get(),
+                        totalFiles,
+                        downloadedBytes.get(),
+                        totalBytes
+                    )
+                )
             }
 
             progress("Downloading Minecraft ${version.id}")
             download(clientUrl, clientFile, clientSha1)
-            downloadedBytes += client.optLong("size", clientFile.length())
-            completed++
+            downloadedBytes.addAndGet(client.optLong("size", clientFile.length()))
+            completed.incrementAndGet()
             progress("Downloading libraries")
 
-            libraries.forEach { library ->
-                val target = safeChild(librariesDir, library.path)
-                download(library.url, target, library.sha1)
-                downloadedBytes += if (library.size > 0) library.size else target.length()
-                completed++
-                progress("Downloading libraries")
+            val semaphore = Semaphore(MAX_PARALLEL_DOWNLOADS)
+            coroutineScope {
+                libraries.map { library ->
+                    async(Dispatchers.IO) {
+                        semaphore.withPermit {
+                            val target = safeChild(librariesDir, library.path)
+                            download(library.url, target, library.sha1)
+                            downloadedBytes.addAndGet(if (library.size > 0) library.size else target.length())
+                            completed.incrementAndGet()
+                            progress("Downloading libraries")
+                        }
+                    }
+                }.awaitAll()
             }
 
             progress("Downloading assets")
-            assetObjects.forEach { asset ->
-                val prefix = asset.hash.take(2)
-                val target = safeChild(File(assetsDir, "objects"), "$prefix/${asset.hash}")
-                download("https://resources.download.minecraft.net/$prefix/${asset.hash}", target, asset.hash)
-                downloadedBytes += if (asset.size > 0) asset.size else target.length()
-                completed++
-                progress("Downloading assets")
+            coroutineScope {
+                assetObjects.map { asset ->
+                    async(Dispatchers.IO) {
+                        semaphore.withPermit {
+                            val prefix = asset.hash.take(2)
+                            val target = safeChild(File(assetsDir, "objects"), "$prefix/${asset.hash}")
+                            download(
+                                "https://resources.download.minecraft.net/$prefix/${asset.hash}",
+                                target,
+                                asset.hash
+                            )
+                            downloadedBytes.addAndGet(if (asset.size > 0) asset.size else target.length())
+                            completed.incrementAndGet()
+                            progress("Downloading assets")
+                        }
+                    }
+                }.awaitAll()
             }
 
             File(versionDir, INSTALL_COMPLETE_FILE).writeText("complete")
@@ -88,8 +121,8 @@ class MinecraftInstaller(private val context: Context) {
                 version = version.id,
                 gameDirectory = root.absolutePath,
                 clientJar = clientFile.absolutePath,
-                installedFiles = completed,
-                downloadedBytes = downloadedBytes
+                installedFiles = completed.get(),
+                downloadedBytes = downloadedBytes.get()
             )
         }
     }
@@ -120,7 +153,12 @@ class MinecraftInstaller(private val context: Context) {
                 val url = artifact.optString("url")
                 val path = artifact.optString("path")
                 if (url.isNotBlank() && path.isNotBlank()) {
-                    result += LibraryFile(path, url, artifact.optString("sha1").takeIf { it.isNotBlank() }, artifact.optLong("size", 0L))
+                    result += LibraryFile(
+                        path,
+                        url,
+                        artifact.optString("sha1").takeIf { it.isNotBlank() },
+                        artifact.optLong("size", 0L)
+                    )
                 }
             }
         }
