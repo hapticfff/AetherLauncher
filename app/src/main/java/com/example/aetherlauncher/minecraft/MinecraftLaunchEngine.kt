@@ -1,9 +1,12 @@
 package com.example.aetherlauncher.minecraft
 
+import android.app.Activity
 import android.content.Context
+import android.os.Build
 import com.example.aetherlauncher.runtime.AndroidRuntimeCatalog
 import com.example.aetherlauncher.runtime.JavaRuntimeManager
 import com.example.aetherlauncher.runtime.NativeJavaProcess
+import com.example.aetherlauncher.ui.DownloadProgressOverlay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -13,25 +16,56 @@ class MinecraftLaunchEngine(private val context: Context) {
     private val installer = MinecraftInstaller(context)
     private val resolver = MinecraftJavaResolver()
     private val runtimeManager = JavaRuntimeManager(context)
+    private val progressOverlay = (context as? Activity)?.let { DownloadProgressOverlay(it) }
+
+    init {
+        // Give Android a smooth UI hint. The platform may choose a higher supported refresh rate.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            (context as? Activity)?.window?.let { window ->
+                window.attributes = window.attributes.apply { preferredRefreshRate = 60f }
+            }
+        }
+    }
 
     suspend fun installAndLaunchDemo(
         versionId: String,
         onProgress: (String) -> Unit = {}
     ): Result<Process> = withContext(Dispatchers.IO) {
+        var lastUiUpdate = 0L
+        var lastStage = ""
+
+        fun report(stage: String, force: Boolean = false) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (!force && stage == lastStage && now - lastUiUpdate < 120L) return
+            lastUiUpdate = now
+            lastStage = stage
+            onProgress(stage)
+        }
+
+        progressOverlay?.show("Preparing Minecraft $versionId")
         runCatching {
-            onProgress("Checking Minecraft $versionId")
+            report("Checking Minecraft $versionId", force = true)
             val manifest = repository.fetchVersionManifest().getOrThrow()
             val version = manifest.versions.firstOrNull { it.id == versionId }
                 ?: error("Minecraft version $versionId was not found in the official manifest")
 
             val metadata = resolver.resolve(version).getOrThrow()
-            onProgress("Java ${metadata.javaMajorVersion} required")
+            report("Java ${metadata.javaMajorVersion} required", force = true)
 
             if (!installer.isInstalled(versionId)) {
-                onProgress("Installing Minecraft $versionId")
-                installer.install(version) { progress -> onProgress(progress.stage) }.getOrThrow()
+                report("Installing Minecraft $versionId", force = true)
+                installer.install(version) { progress ->
+                    progressOverlay?.update(
+                        progress.stage,
+                        progress.completedFiles,
+                        progress.totalFiles,
+                        progress.downloadedBytes,
+                        progress.totalBytes
+                    )
+                    report(progress.stage)
+                }.getOrThrow()
             } else {
-                onProgress("Minecraft $versionId is already installed")
+                report("Minecraft $versionId is already installed", force = true)
             }
 
             var runtime = runtimeManager.findInstalled(metadata.javaMajorVersion)
@@ -40,15 +74,18 @@ class MinecraftLaunchEngine(private val context: Context) {
                     metadata.javaMajorVersion,
                     runtimeManager.supportedArchitecture()
                 ) ?: error("No Android-compatible Java ${metadata.javaMajorVersion} runtime is available for this device")
-                onProgress("Downloading Android Java ${metadata.javaMajorVersion}")
+                report("Downloading Android Java ${metadata.javaMajorVersion}", force = true)
                 runtime = runtimeManager.installFromTarXz(
                     metadata.javaMajorVersion,
                     packageInfo.url,
                     packageInfo.sha256
-                ) { progress -> onProgress(progress.stage) }.getOrThrow()
+                ) { progress ->
+                    progressOverlay?.show(progress.stage, progress.downloadedBytes, progress.totalBytes)
+                    report(progress.stage)
+                }.getOrThrow()
             }
 
-            onProgress("Preparing Minecraft runtime")
+            report("Preparing Minecraft runtime", force = true)
             val process = launchDemo(versionId, metadata, runtime.directory)
 
             Thread.sleep(1_500)
@@ -56,8 +93,11 @@ class MinecraftLaunchEngine(private val context: Context) {
                 error("Minecraft exited immediately (code ${process.exitValue()}). Check Android logcat for the native Java launcher output.")
             }
 
-            onProgress("Minecraft process started")
+            report("Minecraft process started", force = true)
+            progressOverlay?.hide()
             process
+        }.onFailure {
+            progressOverlay?.hide()
         }
     }
 
