@@ -108,7 +108,7 @@ class JavaRuntimeManager(private val context: Context) {
         staging: File,
         onProgress: (JavaRuntimeProgress) -> Unit
     ): JavaRuntime {
-        val javaInStaging = locateJavaExecutable(staging) ?: error("Java runtime archive does not contain bin/java")
+        locateJavaExecutable(staging) ?: error("Java runtime archive does not contain bin/java")
         if (target.exists()) target.deleteRecursively()
         if (!staging.renameTo(target)) error("Unable to install Java runtime")
         val installedJava = locateJavaExecutable(target) ?: error("Installed Java runtime is missing bin/java")
