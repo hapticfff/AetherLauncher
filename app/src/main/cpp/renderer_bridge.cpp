@@ -5,6 +5,7 @@
 #include <GLES3/gl3.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_android.h>
+#include <dlfcn.h>
 #include <mutex>
 #include <string>
 
@@ -74,6 +75,24 @@ static bool renderOpenGL(ANativeWindow* window) {
 }
 
 static bool validateVulkan(ANativeWindow* window) {
+    // Vulkan is API 24+, while this app intentionally keeps minSdk 23.
+    // Load libvulkan dynamically so the API-23 build does not require a
+    // link-time Vulkan library that is absent from the API-23 NDK sysroot.
+    void* vulkanLib = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    if (!vulkanLib) {
+        LOGE("Vulkan library unavailable: %s", dlerror());
+        return false;
+    }
+
+    auto createInstance = reinterpret_cast<PFN_vkCreateInstance>(dlsym(vulkanLib, "vkCreateInstance"));
+    auto destroyInstance = reinterpret_cast<PFN_vkDestroyInstance>(dlsym(vulkanLib, "vkDestroyInstance"));
+    auto getInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(vulkanLib, "vkGetInstanceProcAddr"));
+    if (!createInstance || !destroyInstance || !getInstanceProcAddr) {
+        LOGE("Required Vulkan entry points are unavailable");
+        dlclose(vulkanLib);
+        return false;
+    }
+
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Aether Launcher";
@@ -90,19 +109,23 @@ static bool validateVulkan(ANativeWindow* window) {
     createInfo.ppEnabledExtensionNames = extensions;
 
     VkInstance instance = VK_NULL_HANDLE;
-    VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
+    VkResult result = createInstance(&createInfo, nullptr, &instance);
     if (result != VK_SUCCESS) {
         LOGE("Vulkan instance creation failed: %d", result);
+        dlclose(vulkanLib);
         return false;
     }
 
     auto createSurface = reinterpret_cast<PFN_vkCreateAndroidSurfaceKHR>(
-        vkGetInstanceProcAddr(instance, "vkCreateAndroidSurfaceKHR"));
+        getInstanceProcAddr(instance, "vkCreateAndroidSurfaceKHR"));
     auto destroySurface = reinterpret_cast<PFN_vkDestroySurfaceKHR>(
-        vkGetInstanceProcAddr(instance, "vkDestroySurfaceKHR"));
-    if (!createSurface || !destroySurface) {
+        getInstanceProcAddr(instance, "vkDestroySurfaceKHR"));
+    auto enumeratePhysicalDevices = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+        getInstanceProcAddr(instance, "vkEnumeratePhysicalDevices"));
+    if (!createSurface || !destroySurface || !enumeratePhysicalDevices) {
         LOGE("Vulkan Android surface functions are unavailable");
-        vkDestroyInstance(instance, nullptr);
+        destroyInstance(instance, nullptr);
+        dlclose(vulkanLib);
         return false;
     }
 
@@ -114,17 +137,19 @@ static bool validateVulkan(ANativeWindow* window) {
     result = createSurface(instance, &surfaceInfo, nullptr, &surface);
     if (result != VK_SUCCESS) {
         LOGE("Vulkan Android surface creation failed: %d", result);
-        vkDestroyInstance(instance, nullptr);
+        destroyInstance(instance, nullptr);
+        dlclose(vulkanLib);
         return false;
     }
 
     uint32_t deviceCount = 0;
-    result = vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    result = enumeratePhysicalDevices(instance, &deviceCount, nullptr);
     const bool gpuAvailable = result == VK_SUCCESS && deviceCount > 0;
     LOGI("Vulkan initialized: physical devices=%u", deviceCount);
 
     destroySurface(instance, surface, nullptr);
-    vkDestroyInstance(instance, nullptr);
+    destroyInstance(instance, nullptr);
+    dlclose(vulkanLib);
     return gpuAvailable;
 }
 
