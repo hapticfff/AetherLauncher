@@ -14,7 +14,8 @@ class RendererSurfaceView(
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        RendererNative.attachSurface(holder.surface, renderer.label)
+        val attached = RendererNative.attachSurface(holder.surface, renderer.label)
+        if (attached) RendererNative.notifySurfaceCreated()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
