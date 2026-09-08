@@ -167,7 +167,6 @@ class MinecraftLaunchEngine(private val context: Context) {
                 environment()["JAVA_HOME"] = runtimeDirectory
                 environment()["PATH"] = "$runtimeDirectory/bin:${environment()["PATH"].orEmpty()}"
                 environment()["LD_LIBRARY_PATH"] = "$runtimeLibraryPath:${environment()["LD_LIBRARY_PATH"].orEmpty()}"
-                environment()["AETHER_NATIVE_LIBRARY_PATH"] = libraryPath
             }
             .start()
     }
