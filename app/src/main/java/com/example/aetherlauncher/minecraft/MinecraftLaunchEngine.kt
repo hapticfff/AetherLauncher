@@ -150,6 +150,15 @@ class MinecraftLaunchEngine(private val context: Context) {
         command += gameArguments
 
         val libraryPath = "${nativesDirectory.absolutePath}${File.pathSeparator}${context.applicationInfo.nativeLibraryDir}"
+        val runtimeLibraryPath = listOf(
+            File(runtimeDirectory, "lib/jli"),
+            File(runtimeDirectory, "lib/server"),
+            File(runtimeDirectory, "lib"),
+            File(runtimeDirectory, "lib/jvm"),
+            nativesDirectory,
+            File(context.applicationInfo.nativeLibraryDir)
+        ).filter { it.isDirectory }.joinToString(File.pathSeparator)
+
         return ProcessBuilder(command)
             .directory(gameRoot)
             .redirectErrorStream(true)
@@ -157,7 +166,8 @@ class MinecraftLaunchEngine(private val context: Context) {
             .apply {
                 environment()["JAVA_HOME"] = runtimeDirectory
                 environment()["PATH"] = "$runtimeDirectory/bin:${environment()["PATH"].orEmpty()}"
-                environment()["LD_LIBRARY_PATH"] = "$runtimeDirectory/lib:$libraryPath:${environment()["LD_LIBRARY_PATH"].orEmpty()}"
+                environment()["LD_LIBRARY_PATH"] = "$runtimeLibraryPath:${environment()["LD_LIBRARY_PATH"].orEmpty()}"
+                environment()["AETHER_NATIVE_LIBRARY_PATH"] = libraryPath
             }
             .start()
     }
