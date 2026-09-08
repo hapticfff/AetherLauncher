@@ -4,7 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.widget.FrameLayout
 
-/** Native renderer host. Minecraft/LWJGL integration will bind to this surface in the next renderer step. */
+/** Hosts the Android Surface used by Minecraft/LWJGL and the Pojav GLFW bridge. */
 class RendererActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
