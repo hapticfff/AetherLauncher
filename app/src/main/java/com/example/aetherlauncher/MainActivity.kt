@@ -97,10 +97,10 @@ class MainActivity : ComponentActivity() {
     }
 
     Scaffold(containerColor = Bg, bottomBar = { NavigationBar(containerColor = Card) {
-        NavItem("Play", Icons.Default.PlayArrow, page == Page.HOME) { page = Page.HOME }
-        NavItem("Instances", Icons.Default.ViewList, page == Page.INSTANCES) { page = Page.INSTANCES }
-        NavItem("Mods", Icons.Default.Extension, page == Page.MODS) { page = Page.MODS }
-        NavItem("Settings", Icons.Default.Settings, page == Page.SETTINGS) { page = Page.SETTINGS }
+        NavigationBarItem(selected = page == Page.HOME, onClick = { page = Page.HOME }, icon = { Icon(Icons.Default.PlayArrow, null) }, label = { Text("Play", fontSize = 10.sp) })
+        NavigationBarItem(selected = page == Page.INSTANCES, onClick = { page = Page.INSTANCES }, icon = { Icon(Icons.Default.ViewList, null) }, label = { Text("Instances", fontSize = 10.sp) })
+        NavigationBarItem(selected = page == Page.MODS, onClick = { page = Page.MODS }, icon = { Icon(Icons.Default.Extension, null) }, label = { Text("Mods", fontSize = 10.sp) })
+        NavigationBarItem(selected = page == Page.SETTINGS, onClick = { page = Page.SETTINGS }, icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Settings", fontSize = 10.sp) })
     } }) { pad -> Box(Modifier.padding(pad).fillMaxSize()) {
         when (page) {
             Page.HOME -> HomePage(selected, account?.name ?: "No account", renderer, launching, progress, error, { launch() }, { page = Page.INSTANCES }, { page = Page.MODS }, { page = Page.SETTINGS })
@@ -110,8 +110,6 @@ class MainActivity : ComponentActivity() {
         }
     } }
 }
-
-@Composable private fun NavItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) { NavigationBarItem(selected = selected, onClick = onClick, icon = { Icon(icon, null) }, label = { Text(label, fontSize = 10.sp) }) }
 
 @Composable private fun HomePage(i: LauncherInstance, account: String, renderer: RendererBackend, launching: Boolean, progress: String, error: String?, onPlay: () -> Unit, onInstances: () -> Unit, onMods: () -> Unit, onSettings: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
