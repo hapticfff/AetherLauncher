@@ -31,6 +31,11 @@ class RendererSurfaceView(
         RendererNative.queueResize(width, height)
     }
 
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        RendererNative.queueFocus(hasWindowFocus)
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN,
