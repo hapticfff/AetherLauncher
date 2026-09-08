@@ -1,7 +1,14 @@
 #include <jni.h>
 #include <android/keycodes.h>
+#include <android/log.h>
 #include <dlfcn.h>
 #include <mutex>
+#include <thread>
+#include <chrono>
+
+#define TAG "AetherPojav"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 
 using SetupBridgeWindowFn = void (*)(JNIEnv*, jclass, jobject);
 using ReleaseBridgeWindowFn = void (*)(JNIEnv*, jclass);
@@ -14,6 +21,7 @@ using SendScreenFn = void (*)(jint, jint);
 
 static std::mutex gMutex;
 static jobject gSurface = nullptr;
+static JavaVM* gAndroidVm = nullptr;
 static void* gPojavExec = nullptr;
 static SetupBridgeWindowFn gSetupBridgeWindow = nullptr;
 static ReleaseBridgeWindowFn gReleaseBridgeWindow = nullptr;
@@ -26,10 +34,12 @@ static SendScreenFn gSendScreen = nullptr;
 
 static bool resolvePojavLocked() {
     if (gPojavExec) return true;
-    // Never dlopen libpojavexec from the Android/UI JVM. Its JNI_OnLoad expects
-    // the Pojav CallbackBridge class. Only resolve an already-loaded child-JVM copy.
+    // libpojavexec is normally loaded by the Android LWJGL/Pojav runtime.
+    // RTLD_NOLOAD avoids loading it into the Android UI VM, because its JNI_OnLoad
+    // expects Pojav's CallbackBridge classes and VM lifecycle.
     gPojavExec = dlopen("libpojavexec.so", RTLD_NOW | RTLD_NOLOAD);
     if (!gPojavExec) return false;
+
     gSetupBridgeWindow = reinterpret_cast<SetupBridgeWindowFn>(dlsym(gPojavExec, "Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow"));
     gReleaseBridgeWindow = reinterpret_cast<ReleaseBridgeWindowFn>(dlsym(gPojavExec, "Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow"));
     gSendKey = reinterpret_cast<SendKeyFn>(dlsym(gPojavExec, "JavaCritical_org_lwjgl_glfw_CallbackBridge_nativeSendKey"));
@@ -46,6 +56,7 @@ Java_com_example_aetherlauncher_renderer_PojavInputNative_bindSurface(JNIEnv* en
     std::lock_guard<std::mutex> lock(gMutex);
     if (gSurface) env->DeleteGlobalRef(gSurface);
     gSurface = surface ? env->NewGlobalRef(surface) : nullptr;
+    env->GetJavaVM(&gAndroidVm);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -61,6 +72,41 @@ extern "C" bool aetherBindPojavSurface(JNIEnv* env) {
     if (!gSurface || !resolvePojavLocked() || !gSetupBridgeWindow) return false;
     gSetupBridgeWindow(env, nullptr, gSurface);
     return true;
+}
+
+// JLI_Launch blocks the calling thread while the child JVM starts Minecraft.
+// Poll from a small helper thread so the bridge can bind immediately after the
+// child JVM loads libpojavexec and its JNI_OnLoad initializes CallbackBridge.
+extern "C" void aetherWatchForPojavSurfaceBinding() {
+    JavaVM* vm = gAndroidVm;
+    if (!vm) return;
+
+    std::thread([vm]() {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            {
+                std::lock_guard<std::mutex> lock(gMutex);
+                if (gSurface && resolvePojavLocked() && gSetupBridgeWindow) {
+                    JNIEnv* env = nullptr;
+                    bool attached = false;
+                    if ((*vm)->GetEnv(vm, reinterpret_cast<void**>(&env), JNI_VERSION_1_4) != JNI_OK) {
+                        if ((*vm)->AttachCurrentThread(vm, &env, nullptr) != JNI_OK) {
+                            env = nullptr;
+                        } else {
+                            attached = true;
+                        }
+                    }
+                    if (env) {
+                        gSetupBridgeWindow(env, nullptr, gSurface);
+                        LOGI("Android Surface bound to libpojavexec after child JVM load");
+                    }
+                    if (attached) (*vm)->DetachCurrentThread(vm);
+                    return;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        LOGW("Timed out waiting for child JVM libpojavexec Surface binding");
+    }).detach();
 }
 
 static int androidKeyToGlfw(int keyCode) {
