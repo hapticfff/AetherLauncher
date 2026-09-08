@@ -33,11 +33,15 @@ import com.example.aetherlauncher.minecraft.LoaderProfile
 import com.example.aetherlauncher.minecraft.LoaderRepository
 import com.example.aetherlauncher.minecraft.MinecraftRepository
 import com.example.aetherlauncher.minecraft.MinecraftVersion
+import com.example.aetherlauncher.minecraft.MinecraftLaunchEngine
 import com.example.aetherlauncher.minecraft.mods.CurseForgeProvider
 import com.example.aetherlauncher.minecraft.mods.ModInstaller
 import com.example.aetherlauncher.minecraft.mods.ModProject
 import com.example.aetherlauncher.minecraft.mods.ModProvider
 import com.example.aetherlauncher.minecraft.mods.ModrinthProvider
+import com.example.aetherlauncher.account.AccountType
+import com.example.aetherlauncher.account.LauncherAccount
+import com.example.aetherlauncher.account.LauncherAccountStore
 import kotlinx.coroutines.launch
 
 private val Bg = Color(0xFF08090C)
@@ -56,35 +60,73 @@ class MainActivity : ComponentActivity() {
 @Composable private fun AetherTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Card, primary = Accent, onPrimary = Color.White, onBackground = TextPrimary, onSurface = TextPrimary), content = content)
 
 @Composable private fun AetherApp() {
+    val context = LocalContext.current
+    val accountStore = remember { LauncherAccountStore(context) }
+    val launchEngine = remember { MinecraftLaunchEngine(context) }
+    val scope = rememberCoroutineScope()
     var screen by remember { mutableStateOf(Screen.HOME) }
     var selectedVersion by remember { mutableStateOf("1.21.8") }
     var selectedProfile by remember { mutableStateOf("Vanilla") }
     var toast by remember { mutableStateOf<String?>(null) }
+    var accounts by remember { mutableStateOf(accountStore.accounts()) }
+    var selectedAccount by remember { mutableStateOf(accountStore.selected()) }
+    var showAccountDialog by remember { mutableStateOf(false) }
+    var launching by remember { mutableStateOf(false) }
+    var launchProgress by remember { mutableStateOf("") }
+    var launchError by remember { mutableStateOf<String?>(null) }
 
-    BackHandler(enabled = screen != Screen.HOME) {
-        screen = Screen.HOME
+    LaunchedEffect(Unit) {
+        if (accounts.isEmpty()) {
+            val account = accountStore.addOfflineDemo("Offline account")
+            accounts = accountStore.accounts()
+            selectedAccount = account
+        } else if (selectedAccount == null) selectedAccount = accounts.firstOrNull()
+    }
+
+    BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
+
+    fun startLaunch() {
+        if (launching) return
+        val account = selectedAccount
+        if (account == null) { toast = "Select an account first"; return }
+        if (account.type != AccountType.OFFLINE_DEMO) { toast = "Microsoft authentication is not available yet"; return }
+        launching = true; launchError = null; launchProgress = "Preparing Minecraft $selectedVersion…"
+        scope.launch {
+            launchEngine.installAndLaunchDemo(selectedVersion) { launchProgress = it }
+                .onSuccess { launchProgress = "Minecraft process started"; launching = false; toast = "Minecraft started with Offline account" }
+                .onFailure { launching = false; launchError = it.message ?: "Unable to launch Minecraft" }
+        }
     }
 
     when (screen) {
-        Screen.HOME -> HomeScreen(selectedVersion, selectedProfile, { screen = Screen.VERSIONS }, { screen = Screen.MODS }, { screen = Screen.CONTROLS }, { screen = Screen.RENDERING }) { toast = it }
+        Screen.HOME -> HomeScreen(selectedVersion, selectedProfile, { screen = Screen.VERSIONS }, { screen = Screen.MODS }, { screen = Screen.CONTROLS }, { screen = Screen.RENDERING }, { toast = it }, selectedAccount?.name ?: "No account", { showAccountDialog = true }, launching, launchProgress, launchError, { startLaunch() })
         Screen.VERSIONS -> VersionsScreen(selectedVersion, selectedProfile, { screen = Screen.HOME }) { version, profile -> selectedVersion = version; selectedProfile = profile; screen = Screen.HOME }
         Screen.MODS -> ModsScreen(selectedVersion) { screen = Screen.HOME }
         Screen.CONTROLS -> ControlsScreen { screen = Screen.HOME }
         Screen.RENDERING -> RenderingScreen { screen = Screen.HOME }
     }
+
+    if (showAccountDialog) AccountDialog(accounts, selectedAccount, { accountStore.select(it.id); selectedAccount = it; showAccountDialog = false }, { showAccountDialog = false })
+
     toast?.let { message -> LaunchedEffect(message) { kotlinx.coroutines.delay(1900); toast = null }; Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { Surface(Modifier.padding(bottom = 28.dp), color = Card, shape = RoundedCornerShape(14.dp)) { Text(message, Modifier.padding(16.dp), color = TextPrimary, fontSize = 12.sp) } } }
 }
 
-@Composable private fun HomeScreen(version: String, profile: String, onVersions: () -> Unit, onMods: () -> Unit, onControls: () -> Unit, onRendering: () -> Unit, toast: (String) -> Unit) {
+@Composable private fun HomeScreen(version: String, profile: String, onVersions: () -> Unit, onMods: () -> Unit, onControls: () -> Unit, onRendering: () -> Unit, toast: (String) -> Unit, accountName: String, onAccount: () -> Unit, launching: Boolean, launchProgress: String, launchError: String?, onPlay: () -> Unit) {
     Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text("AETHER", color = TextPrimary, fontSize = 25.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp); Text("JAVA LAUNCHER", color = TextMuted, fontSize = 10.sp, letterSpacing = 2.sp) }; IconButton(onClick = { toast("Microsoft account will be added in Phase 2.8") }) { Icon(Icons.Default.Person, "Account", tint = TextPrimary) } }
-        Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).clickable(onClick = onVersions).padding(20.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(58.dp).background(Accent.copy(alpha = .22f), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Gamepad, null, tint = Color.White, modifier = Modifier.size(30.dp)) }; Spacer(Modifier.width(15.dp)); Column(Modifier.weight(1f)) { Text("Minecraft Java", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold); Text("$profile $version", color = TextMuted, fontSize = 13.sp) }; Icon(Icons.Default.ChevronRight, null, tint = TextMuted) }; Spacer(Modifier.height(18.dp)); HorizontalDivider(color = Color.White.copy(alpha = .06f)); Spacer(Modifier.height(15.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { InfoItem(Icons.Default.Memory, "RAM", "2 GB"); InfoItem(Icons.Default.Speed, "FPS", "--"); InfoItem(Icons.Default.Bolt, "Renderer", "Auto") } }
-        Button(onClick = { toast("Minecraft launch engine is being built after the installation pipeline") }, Modifier.fillMaxWidth().height(66.dp), shape = RoundedCornerShape(20.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent)) { Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(28.dp)); Spacer(Modifier.width(8.dp)); Text("PLAY", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text("AETHER", color = TextPrimary, fontSize = 25.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp); Text("JAVA LAUNCHER", color = TextMuted, fontSize = 10.sp, letterSpacing = 2.sp) }; IconButton(onClick = onAccount) { Icon(Icons.Default.Person, "Account", tint = TextPrimary) } }
+        Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).clickable(onClick = onVersions).padding(20.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(58.dp).background(Accent.copy(alpha = .22f), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Gamepad, null, tint = Color.White, modifier = Modifier.size(30.dp)) }; Spacer(Modifier.width(15.dp)); Column(Modifier.weight(1f)) { Text("Minecraft Java", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold); Text("$profile $version • $accountName", color = TextMuted, fontSize = 13.sp) }; Icon(Icons.Default.ChevronRight, null, tint = TextMuted) }; Spacer(Modifier.height(18.dp)); HorizontalDivider(color = Color.White.copy(alpha = .06f)); Spacer(Modifier.height(15.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { InfoItem(Icons.Default.Memory, "RAM", "2 GB"); InfoItem(Icons.Default.Speed, "FPS", "--"); InfoItem(Icons.Default.Bolt, "Renderer", "Auto") } }
+        Button(onClick = onPlay, enabled = !launching, Modifier.fillMaxWidth().height(66.dp), shape = RoundedCornerShape(20.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent)) { if (launching) CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(28.dp)); Spacer(Modifier.width(8.dp)); Text(if (launching) "LAUNCHING" else "PLAY", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp) }
+        if (launching) Text(launchProgress, color = TextMuted, fontSize = 10.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+        launchError?.let { error -> Surface(Modifier.fillMaxWidth(), color = CardSelected, shape = RoundedCornerShape(14.dp)) { Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Launch failed", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp); Text(error, color = TextMuted, fontSize = 10.sp) }; TextButton(onClick = onPlay) { Text("RETRY", color = Accent, fontSize = 10.sp) } } } }
         Text("Launcher tools", color = TextMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { ToolCard(Modifier.weight(1f), Icons.Default.Extension, "Mods", "Modrinth + CurseForge", onMods); ToolCard(Modifier.weight(1f), Icons.Default.Gamepad, "Controls", "Touch + controller", onControls) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { ToolCard(Modifier.weight(1f), Icons.Default.ViewList, "Versions", "Vanilla + loaders", onVersions); ToolCard(Modifier.weight(1f), Icons.Default.Bolt, "Rendering", "Graphics profiles", onRendering) }
-        Spacer(Modifier.weight(1f)); Text("AETHER LAUNCHER • PHASE 2.4", Modifier.fillMaxWidth(), color = TextMuted.copy(alpha = .6f), fontSize = 10.sp, textAlign = TextAlign.Center, letterSpacing = 1.5.sp)
+        Spacer(Modifier.weight(1f)); Text("AETHER LAUNCHER • PHASE 2.9", Modifier.fillMaxWidth(), color = TextMuted.copy(alpha = .6f), fontSize = 10.sp, textAlign = TextAlign.Center, letterSpacing = 1.5.sp)
     }
+}
+
+@Composable private fun AccountDialog(accounts: List<LauncherAccount>, selected: LauncherAccount?, onSelect: (LauncherAccount) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Accounts") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { accounts.forEach { account -> val isSelected = account.id == selected?.id; Surface(onClick = { onSelect(account) }, color = if (isSelected) CardSelected else Card, shape = RoundedCornerShape(14.dp)) { Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) { Icon(if (account.type == AccountType.OFFLINE_DEMO) Icons.Default.PersonOutline else Icons.Default.Person, null, tint = if (isSelected) Accent else TextMuted); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f)) { Text(account.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(if (account.type == AccountType.OFFLINE_DEMO) "Offline testing profile" else "Microsoft account", color = TextMuted, fontSize = 9.sp) }; if (isSelected) Icon(Icons.Default.CheckCircle, null, tint = Accent) } } }; Text("Offline account is for local launcher testing only. Full Minecraft ownership still requires Microsoft authentication.", color = TextMuted, fontSize = 9.sp) } }, confirmButton = { TextButton(onClick = onDismiss) { Text("DONE", color = Accent) } })
 }
 
 @Composable private fun InfoItem(icon: ImageVector, title: String, value: String) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(icon, null, tint = Accent, modifier = Modifier.size(19.dp)); Spacer(Modifier.height(5.dp)); Text(value, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold); Text(title, color = TextMuted, fontSize = 10.sp) } }
