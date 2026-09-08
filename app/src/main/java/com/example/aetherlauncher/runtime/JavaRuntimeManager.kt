@@ -2,6 +2,7 @@ package com.example.aetherlauncher.runtime
 
 import android.content.Context
 import android.os.Build
+import android.system.Os
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
@@ -29,11 +30,13 @@ class JavaRuntimeManager(private val context: Context) {
         val directory = runtimeDirectory(majorVersion)
         val java = File(directory, "bin/java")
         if (!java.isFile) return null
-        if (!java.canExecute()) {
-            java.setExecutable(true, false)
+        return try {
+            ensureExecutable(java)
+            if (!java.canExecute()) return null
+            JavaRuntime(majorVersion, supportedArchitecture(), directory.absolutePath, java.absolutePath, true)
+        } catch (_: Exception) {
+            null
         }
-        if (!java.canExecute()) return null
-        return JavaRuntime(majorVersion, supportedArchitecture(), directory.absolutePath, java.absolutePath, true)
     }
 
     suspend fun installFromZip(
@@ -91,7 +94,10 @@ class JavaRuntimeManager(private val context: Context) {
             val major = versionDir.name.removePrefix("java").toIntOrNull() ?: return@flatMap emptyList()
             versionDir.listFiles().orEmpty().mapNotNull { archDir ->
                 val java = File(archDir, "bin/java")
-                if (java.isFile) JavaRuntime(major, archDir.name, archDir.absolutePath, java.absolutePath, true) else null
+                if (java.isFile) {
+                    runCatching { ensureExecutable(java) }.getOrNull()
+                    if (java.canExecute()) JavaRuntime(major, archDir.name, archDir.absolutePath, java.absolutePath, true) else null
+                } else null
             }
         }
         .sortedBy { it.majorVersion }
@@ -102,14 +108,20 @@ class JavaRuntimeManager(private val context: Context) {
         staging: File,
         onProgress: (JavaRuntimeProgress) -> Unit
     ): JavaRuntime {
-        locateJavaExecutable(staging) ?: error("Java runtime archive does not contain bin/java")
+        val javaInStaging = locateJavaExecutable(staging) ?: error("Java runtime archive does not contain bin/java")
         if (target.exists()) target.deleteRecursively()
         if (!staging.renameTo(target)) error("Unable to install Java runtime")
         val installedJava = locateJavaExecutable(target) ?: error("Installed Java runtime is missing bin/java")
-        installedJava.setExecutable(true, false)
-        if (!installedJava.canExecute()) error("Unable to make Java runtime executable")
+        ensureExecutable(installedJava)
+        if (!installedJava.canExecute()) error("Java runtime executable permission could not be enabled")
         onProgress(JavaRuntimeProgress("Java $majorVersion ready"))
         return JavaRuntime(majorVersion, supportedArchitecture(), target.absolutePath, installedJava.absolutePath, true)
+    }
+
+    private fun ensureExecutable(file: File) {
+        file.setReadable(true, false)
+        file.setExecutable(true, false)
+        Os.chmod(file.absolutePath, 0x1ED)
     }
 
     private fun locateJavaExecutable(root: File): File? {
