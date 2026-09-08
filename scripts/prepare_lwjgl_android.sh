@@ -44,7 +44,14 @@ popd >/dev/null
 find "$WORK/lwjgl3/bin/RELEASE" -maxdepth 1 -type f -name '*.jar' \
   ! -name '*-natives-*' ! -name '*-sources.jar' -print -exec cp {} "$OUT/" \;
 
-find "$WORK/pojav/jre_lwjgl3glfw/build/libs" -maxdepth 1 -type f -name '*.jar' -print -exec cp {} "$OUT/lwjgl-glfw-classes.jar" \;
+# Pojav's GLFW stub Gradle project writes its jar directly into the cloned
+# launcher asset directory rather than jre_lwjgl3glfw/build/libs.
+GLFW_JAR="$WORK/pojav/app_pojavlauncher/src/main/assets/components/lwjgl3/lwjgl-glfw-classes.jar"
+if [[ ! -f "$GLFW_JAR" ]]; then
+  echo "Android GLFW stub jar not found at $GLFW_JAR" >&2
+  exit 1
+fi
+cp "$GLFW_JAR" "$OUT/lwjgl-glfw-classes.jar"
 
 mkdir -p "$OUT/native/arm64-v8a"
 find "$WORK/lwjgl3/bin/out" -maxdepth 1 -type f -name '*.so' -print -exec cp {} "$OUT/native/arm64-v8a/" \;
