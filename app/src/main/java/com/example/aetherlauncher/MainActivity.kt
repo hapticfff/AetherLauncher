@@ -3,6 +3,7 @@ package com.example.aetherlauncher
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -59,6 +60,11 @@ class MainActivity : ComponentActivity() {
     var selectedVersion by remember { mutableStateOf("1.21.8") }
     var selectedProfile by remember { mutableStateOf("Vanilla") }
     var toast by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = screen != Screen.HOME) {
+        screen = Screen.HOME
+    }
+
     when (screen) {
         Screen.HOME -> HomeScreen(selectedVersion, selectedProfile, { screen = Screen.VERSIONS }, { screen = Screen.MODS }, { screen = Screen.CONTROLS }, { screen = Screen.RENDERING }) { toast = it }
         Screen.VERSIONS -> VersionsScreen(selectedVersion, selectedProfile, { screen = Screen.HOME }) { version, profile -> selectedVersion = version; selectedProfile = profile; screen = Screen.HOME }
