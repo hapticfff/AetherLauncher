@@ -29,6 +29,10 @@ class JavaRuntimeManager(private val context: Context) {
         val directory = runtimeDirectory(majorVersion)
         val java = File(directory, "bin/java")
         if (!java.isFile) return null
+        if (!java.canExecute()) {
+            java.setExecutable(true, false)
+        }
+        if (!java.canExecute()) return null
         return JavaRuntime(majorVersion, supportedArchitecture(), directory.absolutePath, java.absolutePath, true)
     }
 
@@ -103,6 +107,7 @@ class JavaRuntimeManager(private val context: Context) {
         if (!staging.renameTo(target)) error("Unable to install Java runtime")
         val installedJava = locateJavaExecutable(target) ?: error("Installed Java runtime is missing bin/java")
         installedJava.setExecutable(true, false)
+        if (!installedJava.canExecute()) error("Unable to make Java runtime executable")
         onProgress(JavaRuntimeProgress("Java $majorVersion ready"))
         return JavaRuntime(majorVersion, supportedArchitecture(), target.absolutePath, installedJava.absolutePath, true)
     }
