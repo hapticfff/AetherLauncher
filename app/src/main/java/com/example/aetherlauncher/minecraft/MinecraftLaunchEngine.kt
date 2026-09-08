@@ -3,6 +3,8 @@ package com.example.aetherlauncher.minecraft
 import android.app.Activity
 import android.content.Context
 import android.os.Build
+import com.example.aetherlauncher.renderer.RendererBackend
+import com.example.aetherlauncher.renderer.RendererManager
 import com.example.aetherlauncher.runtime.AndroidRuntimeCatalog
 import com.example.aetherlauncher.runtime.JavaRuntimeManager
 import com.example.aetherlauncher.runtime.NativeJavaProcess
@@ -29,6 +31,7 @@ class MinecraftLaunchEngine(private val context: Context) {
 
     suspend fun installAndLaunchDemo(
         versionId: String,
+        renderer: RendererBackend = RendererBackend.AUTO,
         onProgress: (String) -> Unit = {}
     ): Result<Process> = withContext(Dispatchers.IO) {
         var lastUiUpdate = 0L
@@ -44,6 +47,8 @@ class MinecraftLaunchEngine(private val context: Context) {
 
         progressOverlay?.show("Preparing Minecraft $versionId")
         runCatching {
+            val resolvedRenderer = RendererManager.resolve(context, renderer)
+            report("Renderer: ${resolvedRenderer.label}", force = true)
             report("Checking Minecraft $versionId", force = true)
             val manifest = repository.fetchVersionManifest().getOrThrow()
             val version = manifest.versions.firstOrNull { it.id == versionId }
@@ -85,15 +90,15 @@ class MinecraftLaunchEngine(private val context: Context) {
                 }.getOrThrow()
             }
 
-            report("Preparing Minecraft runtime", force = true)
-            val process = launchDemo(versionId, metadata, runtime.directory)
+            report("Preparing ${resolvedRenderer.label} renderer", force = true)
+            val process = launchDemo(versionId, metadata, runtime.directory, resolvedRenderer)
 
             Thread.sleep(1_500)
             if (!process.isAlive) {
                 error("Minecraft exited immediately (code ${process.exitValue()}). Check Android logcat for the native Java launcher output.")
             }
 
-            report("Minecraft process started", force = true)
+            report("Minecraft process started • ${resolvedRenderer.label}", force = true)
             progressOverlay?.hide()
             process
         }.onFailure {
@@ -104,7 +109,8 @@ class MinecraftLaunchEngine(private val context: Context) {
     private fun launchDemo(
         versionId: String,
         metadata: MinecraftLaunchMetadata,
-        runtimeDirectory: String
+        runtimeDirectory: String,
+        renderer: RendererBackend
     ): Process {
         val gameRoot = installer.installationDirectory()
         val versionJar = File(gameRoot, "versions/$versionId/$versionId.jar")
@@ -138,7 +144,7 @@ class MinecraftLaunchEngine(private val context: Context) {
             "version_type" to "release",
             "natives_directory" to nativesDirectory.absolutePath,
             "launcher_name" to "Aether Launcher",
-            "launcher_version" to "0.3.0",
+            "launcher_version" to "0.4.0",
             "classpath" to classpath
         )
 
@@ -182,6 +188,6 @@ class MinecraftLaunchEngine(private val context: Context) {
         if ("--demo" !in gameArguments) gameArguments += "--demo"
         command += gameArguments
 
-        return NativeJavaProcess(runtimeDirectory, command)
+        return NativeJavaProcess(runtimeDirectory, command, renderer.label)
     }
 }
