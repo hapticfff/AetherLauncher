@@ -115,60 +115,14 @@ class MainActivity : ComponentActivity() {
     Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text("AETHER", color = TextPrimary, fontSize = 25.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp); Text("JAVA LAUNCHER", color = TextMuted, fontSize = 10.sp, letterSpacing = 2.sp) }; IconButton(onClick = onAccount) { Icon(Icons.Default.Person, "Account", tint = TextPrimary) } }
         Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).clickable(onClick = onVersions).padding(20.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(58.dp).background(Accent.copy(alpha = .22f), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Gamepad, null, tint = Color.White, modifier = Modifier.size(30.dp)) }; Spacer(Modifier.width(15.dp)); Column(Modifier.weight(1f)) { Text("Minecraft Java", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold); Text("$profile $version • $accountName", color = TextMuted, fontSize = 13.sp) }; Icon(Icons.Default.ChevronRight, null, tint = TextMuted) }; Spacer(Modifier.height(18.dp)); HorizontalDivider(color = Color.White.copy(alpha = .06f)); Spacer(Modifier.height(15.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { InfoItem(Icons.Default.Memory, "RAM", "2 GB"); InfoItem(Icons.Default.Speed, "FPS", "--"); InfoItem(Icons.Default.Bolt, "Renderer", "Auto") } }
-        Button(
-    onClick = onPlay,
-    modifier = Modifier
-        .fillMaxWidth()
-        .height(66.dp),
-    enabled = !launching,
-    shape = RoundedCornerShape(20.dp),
-    colors = ButtonDefaults.buttonColors(containerColor = Accent)
-) {
-    if (launching) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(24.dp),
-            color = Color.White,
-            strokeWidth = 2.dp
-        )
-    } else {
-        Icon(
-            Icons.Default.PlayArrow,
-            contentDescription = null,
-            modifier = Modifier.size(28.dp)
-        )
+        Button(onClick = onPlay, modifier = Modifier.fillMaxWidth().height(66.dp), enabled = !launching, shape = RoundedCornerShape(20.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent)) { if (launching) CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(28.dp)); Spacer(Modifier.width(8.dp)); Text(if (launching) "LAUNCHING" else "PLAY", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp) }
+        if (launching) Text(launchProgress, color = TextMuted, fontSize = 10.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+        launchError?.let { error -> Surface(Modifier.fillMaxWidth(), color = CardSelected, shape = RoundedCornerShape(14.dp)) { Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Launch failed", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp); Text(error, color = TextMuted, fontSize = 10.sp) }; TextButton(onClick = onPlay) { Text("RETRY", color = Accent, fontSize = 10.sp) } } } }
+        Text("Launcher tools", color = TextMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { ToolCard(Modifier.weight(1f), Icons.Default.Extension, "Mods", "Modrinth + CurseForge", onMods); ToolCard(Modifier.weight(1f), Icons.Default.Gamepad, "Controls", "Touch + controller", onControls) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { ToolCard(Modifier.weight(1f), Icons.Default.ViewList, "Versions", "Vanilla + loaders", onVersions); ToolCard(Modifier.weight(1f), Icons.Default.Bolt, "Rendering", "Graphics profiles", onRendering) }
+        Spacer(Modifier.weight(1f)); Text("AETHER LAUNCHER • PHASE 2.9", Modifier.fillMaxWidth(), color = TextMuted.copy(alpha = .6f), fontSize = 10.sp, textAlign = TextAlign.Center, letterSpacing = 1.5.sp)
     }
-
-    Spacer(Modifier.width(8.dp))
-
-    Text(
-        if (launching) "LAUNCHING" else "PLAY",
-        fontSize = 19.sp,
-        fontWeight = FontWeight.Black,
-        letterSpacing = 2.sp
-    )
-}
-    if (launching) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(24.dp),
-            color = Color.White,
-            strokeWidth = 2.dp
-        )
-    } else {
-        Icon(
-            Icons.Default.PlayArrow,
-            contentDescription = null,
-            modifier = Modifier.size(28.dp)
-        )
-    }
-
-    Spacer(Modifier.width(8.dp))
-
-    Text(
-        if (launching) "LAUNCHING" else "PLAY",
-        fontSize = 19.sp,
-        fontWeight = FontWeight.Black,
-        letterSpacing = 2.sp
-    )
 }
 
 @Composable private fun AccountDialog(accounts: List<LauncherAccount>, selected: LauncherAccount?, onSelect: (LauncherAccount) -> Unit, onDismiss: () -> Unit) {
