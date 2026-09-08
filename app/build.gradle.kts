@@ -9,6 +9,7 @@ plugins {
 android {
     namespace = "com.example.aetherlauncher"
     compileSdk = 35
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "com.example.aetherlauncher"
@@ -16,6 +17,19 @@ android {
         targetSdk = 28
         versionCode = 2
         versionName = "0.2.0"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++17"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     compileOptions {
