@@ -14,6 +14,7 @@ import java.security.MessageDigest
 class MinecraftInstaller(private val context: Context) {
     companion object {
         private const val ROOT_DIR = "minecraft"
+        private const val INSTALL_COMPLETE_FILE = ".installation-complete"
         private const val VERSION_MANIFEST_URL =
             "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
     }
@@ -81,6 +82,7 @@ class MinecraftInstaller(private val context: Context) {
                 progress("Downloading assets")
             }
 
+            File(versionDir, INSTALL_COMPLETE_FILE).writeText("complete")
             progress("Installation complete")
             MinecraftInstallation(
                 version = version.id,
@@ -95,7 +97,8 @@ class MinecraftInstaller(private val context: Context) {
     fun installationDirectory(): File = File(context.filesDir, ROOT_DIR)
 
     fun isInstalled(version: String): Boolean =
-        File(installationDirectory(), "versions/$version/$version.jar").isFile
+        File(installationDirectory(), "versions/$version/$version.jar").isFile &&
+            File(installationDirectory(), "versions/$version/$INSTALL_COMPLETE_FILE").isFile
 
     private data class LibraryFile(
         val path: String,
