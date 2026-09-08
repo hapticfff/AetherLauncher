@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.tukaani.xz.XZCompressorInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.net.HttpURLConnection
@@ -46,23 +48,38 @@ class JavaRuntimeManager(private val context: Context) {
             download(archiveUrl, archive, expectedSha256) { downloaded, total ->
                 onProgress(JavaRuntimeProgress("Downloading Java $majorVersion", downloaded, total))
             }
-
             val staging = File(target.parentFile, ".java$majorVersion-${supportedArchitecture()}-staging")
             if (staging.exists()) staging.deleteRecursively()
             staging.mkdirs()
             onProgress(JavaRuntimeProgress("Extracting Java $majorVersion"))
             extractZipSafely(archive, staging)
             archive.delete()
+            installStaging(majorVersion, target, staging, onProgress)
+        }
+    }
 
-            val java = locateJavaExecutable(staging)
-                ?: error("Java runtime archive does not contain bin/java")
-            if (target.exists()) target.deleteRecursively()
-            if (!staging.renameTo(target)) error("Unable to install Java runtime")
-            val installedJava = locateJavaExecutable(target)
-                ?: error("Installed Java runtime is missing bin/java")
-            installedJava.setExecutable(true, false)
-            onProgress(JavaRuntimeProgress("Java $majorVersion ready"))
-            JavaRuntime(majorVersion, supportedArchitecture(), target.absolutePath, installedJava.absolutePath, true)
+    suspend fun installFromTarXz(
+        majorVersion: Int,
+        archiveUrl: String,
+        expectedSha256: String? = null,
+        onProgress: (JavaRuntimeProgress) -> Unit = {}
+    ): Result<JavaRuntime> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(archiveUrl.startsWith("https://")) { "Runtime URL must use HTTPS" }
+            val target = runtimeDirectory(majorVersion)
+            target.parentFile?.mkdirs()
+            val archive = File(target.parentFile, "java$majorVersion-${supportedArchitecture()}.tar.xz.part")
+            onProgress(JavaRuntimeProgress("Downloading Java $majorVersion"))
+            download(archiveUrl, archive, expectedSha256) { downloaded, total ->
+                onProgress(JavaRuntimeProgress("Downloading Java $majorVersion", downloaded, total))
+            }
+            val staging = File(target.parentFile, ".java$majorVersion-${supportedArchitecture()}-staging")
+            if (staging.exists()) staging.deleteRecursively()
+            staging.mkdirs()
+            onProgress(JavaRuntimeProgress("Extracting Java $majorVersion"))
+            extractTarXzSafely(archive, staging)
+            archive.delete()
+            installStaging(majorVersion, target, staging, onProgress)
         }
     }
 
@@ -76,27 +93,66 @@ class JavaRuntimeManager(private val context: Context) {
         }
         .sortedBy { it.majorVersion }
 
+    private fun installStaging(
+        majorVersion: Int,
+        target: File,
+        staging: File,
+        onProgress: (JavaRuntimeProgress) -> Unit
+    ): JavaRuntime {
+        locateJavaExecutable(staging) ?: error("Java runtime archive does not contain bin/java")
+        if (target.exists()) target.deleteRecursively()
+        if (!staging.renameTo(target)) error("Unable to install Java runtime")
+        val installedJava = locateJavaExecutable(target)
+            ?: error("Installed Java runtime is missing bin/java")
+        installedJava.setExecutable(true, false)
+        onProgress(JavaRuntimeProgress("Java $majorVersion ready"))
+        return JavaRuntime(majorVersion, supportedArchitecture(), target.absolutePath, installedJava.absolutePath, true)
+    }
+
     private fun locateJavaExecutable(root: File): File? {
         val direct = File(root, "bin/java")
         if (direct.isFile) return direct
-        val candidates = root.walkTopDown().filter { it.isFile && it.name == "java" }
-        return candidates.firstOrNull { it.parentFile?.name == "bin" }
+        return root.walkTopDown().firstOrNull { it.isFile && it.name == "java" && it.parentFile?.name == "bin" }
     }
 
     private fun extractZipSafely(archive: File, destination: File) {
         ZipFile(archive).use { zip ->
             zip.entries().asSequence().forEach { entry ->
-                val output = File(destination, entry.name).canonicalFile
-                val base = destination.canonicalFile
-                require(output.path == base.path || output.path.startsWith(base.path + File.separator)) {
-                    "Unsafe runtime archive path"
-                }
+                val output = safeArchivePath(destination, entry.name)
                 if (entry.isDirectory) output.mkdirs() else {
                     output.parentFile?.mkdirs()
                     zip.getInputStream(entry).use { input -> output.outputStream().use { input.copyTo(it) } }
                 }
             }
         }
+    }
+
+    private fun extractTarXzSafely(archive: File, destination: File) {
+        FileInputStream(archive).use { fileInput ->
+            XZCompressorInputStream(fileInput).use { xzInput ->
+                TarArchiveInputStream(xzInput).use { tar ->
+                    while (true) {
+                        val entry = tar.nextTarEntry ?: break
+                        val output = safeArchivePath(destination, entry.name)
+                        if (entry.isDirectory) {
+                            output.mkdirs()
+                        } else {
+                            output.parentFile?.mkdirs()
+                            output.outputStream().use { tar.copyTo(it) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun safeArchivePath(destination: File, entryName: String): File {
+        val base = destination.canonicalFile
+        val output = File(base, entryName).canonicalFile
+        require(output.path == base.path || output.path.startsWith(base.path + File.separator)) {
+            "Unsafe runtime archive path"
+        }
+        return output
     }
 
     private fun download(
