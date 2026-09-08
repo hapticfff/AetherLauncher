@@ -9,6 +9,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+extern "C" bool aetherBindPojavSurface(JNIEnv* env);
+
 using JLI_LaunchFn = int (*)(
     int, char **,
     int, const char **,
@@ -31,17 +33,14 @@ static bool isRegularFile(const std::string &path) {
 static std::string findLibraryRecursive(const std::string &root, const std::string &name) {
     DIR *directory = opendir(root.c_str());
     if (!directory) return "";
-
     while (dirent *entry = readdir(directory)) {
         const char *entryName = entry->d_name;
         if (strcmp(entryName, ".") == 0 || strcmp(entryName, "..") == 0) continue;
-
         const std::string path = root + "/" + entryName;
         if (isRegularFile(path) && name == entryName) {
             closedir(directory);
             return path;
         }
-
         if (entry->d_type == DT_DIR || entry->d_type == DT_UNKNOWN) {
             const std::string found = findLibraryRecursive(path, name);
             if (!found.empty()) {
@@ -50,35 +49,25 @@ static std::string findLibraryRecursive(const std::string &root, const std::stri
             }
         }
     }
-
     closedir(directory);
     return "";
 }
 
 static std::string findJliLibrary(const std::string &runtime) {
     const char *candidates[] = {
-        "/lib/jli/libjli.so",
-        "/lib/aarch64/jli/libjli.so",
-        "/lib/arm64/jli/libjli.so",
-        "/lib/arm/jli/libjli.so",
-        "/lib/x86/jli/libjli.so",
-        "/lib/x86_64/jli/libjli.so"
+        "/lib/jli/libjli.so", "/lib/aarch64/jli/libjli.so", "/lib/arm64/jli/libjli.so",
+        "/lib/arm/jli/libjli.so", "/lib/x86/jli/libjli.so", "/lib/x86_64/jli/libjli.so"
     };
-
     for (const char *candidate : candidates) {
         const std::string path = runtime + candidate;
         if (isRegularFile(path)) return path;
     }
-
     return findLibraryRecursive(runtime + "/lib", "libjli.so");
 }
 
 static void appendLibraryPath(std::string &value, const std::string &path) {
-    if (value.empty()) {
-        value = path;
-    } else {
-        value += ":" + path;
-    }
+    if (value.empty()) value = path;
+    else value += ":" + path;
 }
 
 static void configureLibraryPath(const std::string &runtime, const std::string &jliPath) {
@@ -86,7 +75,6 @@ static void configureLibraryPath(const std::string &runtime, const std::string &
     appendLibraryPath(libPath, runtime + "/lib/jli");
     appendLibraryPath(libPath, runtime + "/lib/server");
     appendLibraryPath(libPath, runtime + "/lib");
-
     const std::string marker = "/lib/";
     const size_t markerPos = jliPath.find(marker);
     if (markerPos != std::string::npos) {
@@ -99,21 +87,15 @@ static void configureLibraryPath(const std::string &runtime, const std::string &
             appendLibraryPath(libPath, architectureRoot);
         }
     }
-
     appendLibraryPath(libPath, "/system/lib64");
     appendLibraryPath(libPath, "/vendor/lib64");
     setenv("LD_LIBRARY_PATH", libPath.c_str(), 1);
 }
 
-static void preloadRuntimeLibrary(
-    const std::string &runtime,
-    const std::string &jliPath,
-    const char *name,
-    std::vector<void *> &handles) {
+static void preloadRuntimeLibrary(const std::string &runtime, const std::string &jliPath, const char *name, std::vector<void *> &handles) {
     std::string path = findLibraryRecursive(runtime + "/lib", name);
     if (path.empty() && strcmp(name, "libjli.so") == 0) path = jliPath;
     if (path.empty()) return;
-
     void *handle = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (handle) {
         handles.push_back(handle);
@@ -140,8 +122,6 @@ Java_com_example_aetherlauncher_runtime_NativeJavaProcess_nativeLaunch(
     configureLibraryPath(runtime, jliPath);
     setenv("PATH", (runtime + "/bin:" + (getenv("PATH") ? getenv("PATH") : "")).c_str(), 1);
 
-    // Renderer selection is exported for the future LWJGL/GLFW Android bridge.
-    // Pojav-compatible POJAV_RENDERER is also set so compatible renderer layers can consume it.
     if (!selectedRenderer.empty()) {
         setenv("AETHER_RENDERER", selectedRenderer.c_str(), 1);
         if (selectedRenderer == "OpenGL") {
@@ -170,6 +150,14 @@ Java_com_example_aetherlauncher_runtime_NativeJavaProcess_nativeLaunch(
     preloadRuntimeLibrary(runtime, jliPath, "libfreetype.so", handles);
     preloadRuntimeLibrary(runtime, jliPath, "libfontmanager.so", handles);
     preloadRuntimeLibrary(runtime, jliPath, "libzip.so", handles);
+    // Pojav's real GLFW/EGL ABI is required by the Android GLFW Java stub.
+    preloadRuntimeLibrary(runtime, jliPath, "libpojavexec.so", handles);
+
+    if (aetherBindPojavSurface(env)) {
+        __android_log_print(ANDROID_LOG_INFO, "AetherLauncher", "Bound Android Surface to libpojavexec before JLI_Launch");
+    } else {
+        __android_log_print(ANDROID_LOG_WARN, "AetherLauncher", "libpojavexec Surface binding was not available before JLI_Launch");
+    }
 
     void *jliHandle = nullptr;
     for (void *handle : handles) {
@@ -178,7 +166,6 @@ Java_com_example_aetherlauncher_runtime_NativeJavaProcess_nativeLaunch(
             break;
         }
     }
-
     if (!jliHandle) {
         __android_log_print(ANDROID_LOG_ERROR, "AetherLauncher", "JLI_Launch symbol was not found after loading %s", jliPath.c_str());
         for (void *handle : handles) dlclose(handle);
