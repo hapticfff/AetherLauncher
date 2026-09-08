@@ -30,7 +30,7 @@ if ! command -v ant >/dev/null 2>&1; then
 fi
 
 pushd "$WORK/lwjgl3" >/dev/null
-bash ci_build_android.bash
+JAVA_HOME="$JAVA8_HOME" bash ci_build_android.bash
 popd >/dev/null
 
 # Build the Android GLFW Java stub. It replaces the desktop GLFW implementation
