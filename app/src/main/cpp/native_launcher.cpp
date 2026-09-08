@@ -63,13 +63,15 @@ static void waitForPojavSurfaceBinding(JavaVM* vm) {
         void* handle = dlopen("libpojavexec.so", RTLD_NOW | RTLD_NOLOAD);
         if (handle) {
             JNIEnv* attachedEnv = nullptr;
-            if (vm->AttachCurrentThread(&attachedEnv, nullptr) == JNI_OK && aetherBindPojavSurface(attachedEnv)) {
+            const jint attachResult = vm->AttachCurrentThread(&attachedEnv, nullptr);
+            bool bound = false;
+            if (attachResult == JNI_OK && attachedEnv) bound = aetherBindPojavSurface(attachedEnv);
+            if (attachResult == JNI_OK && attachedEnv) vm->DetachCurrentThread();
+            dlclose(handle);
+            if (bound) {
                 __android_log_print(ANDROID_LOG_INFO, "AetherLauncher", "Android Surface bound to libpojavexec after child JVM load");
-                vm->DetachCurrentThread();
                 return;
             }
-            if (attachedEnv) vm->DetachCurrentThread();
-            return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
