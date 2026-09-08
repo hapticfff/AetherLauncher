@@ -1,6 +1,6 @@
 package com.example.aetherlauncher.minecraft.mods
 
-enum class ModProviderType { MODRINTH }
+enum class ModProviderType { MODRINTH, CURSEFORGE }
 
 data class ModProject(
     val provider: ModProviderType,
