@@ -39,21 +39,14 @@ class JavaRuntimeManager(private val context: Context) {
         }
     }
 
-    suspend fun installFromZip(
-        majorVersion: Int,
-        archiveUrl: String,
-        expectedSha256: String? = null,
-        onProgress: (JavaRuntimeProgress) -> Unit = {}
-    ): Result<JavaRuntime> = withContext(Dispatchers.IO) {
+    suspend fun installFromZip(majorVersion: Int, archiveUrl: String, expectedSha256: String? = null, onProgress: (JavaRuntimeProgress) -> Unit = {}): Result<JavaRuntime> = withContext(Dispatchers.IO) {
         runCatching {
             require(archiveUrl.startsWith("https://")) { "Runtime URL must use HTTPS" }
             val target = runtimeDirectory(majorVersion)
             target.parentFile?.mkdirs()
             val archive = File(target.parentFile, "java$majorVersion-${supportedArchitecture()}.zip.part")
             onProgress(JavaRuntimeProgress("Downloading Java $majorVersion"))
-            download(archiveUrl, archive, expectedSha256) { downloaded, total ->
-                onProgress(JavaRuntimeProgress("Downloading Java $majorVersion", downloaded, total))
-            }
+            download(archiveUrl, archive, expectedSha256) { downloaded, total -> onProgress(JavaRuntimeProgress("Downloading Java $majorVersion", downloaded, total)) }
             val staging = File(target.parentFile, ".java$majorVersion-${supportedArchitecture()}-staging")
             if (staging.exists()) staging.deleteRecursively()
             staging.mkdirs()
@@ -64,21 +57,14 @@ class JavaRuntimeManager(private val context: Context) {
         }
     }
 
-    suspend fun installFromTarXz(
-        majorVersion: Int,
-        archiveUrl: String,
-        expectedSha256: String? = null,
-        onProgress: (JavaRuntimeProgress) -> Unit = {}
-    ): Result<JavaRuntime> = withContext(Dispatchers.IO) {
+    suspend fun installFromTarXz(majorVersion: Int, archiveUrl: String, expectedSha256: String? = null, onProgress: (JavaRuntimeProgress) -> Unit = {}): Result<JavaRuntime> = withContext(Dispatchers.IO) {
         runCatching {
             require(archiveUrl.startsWith("https://")) { "Runtime URL must use HTTPS" }
             val target = runtimeDirectory(majorVersion)
             target.parentFile?.mkdirs()
             val archive = File(target.parentFile, "java$majorVersion-${supportedArchitecture()}.tar.xz.part")
             onProgress(JavaRuntimeProgress("Downloading Java $majorVersion"))
-            download(archiveUrl, archive, expectedSha256) { downloaded, total ->
-                onProgress(JavaRuntimeProgress("Downloading Java $majorVersion", downloaded, total))
-            }
+            download(archiveUrl, archive, expectedSha256) { downloaded, total -> onProgress(JavaRuntimeProgress("Downloading Java $majorVersion", downloaded, total)) }
             val staging = File(target.parentFile, ".java$majorVersion-${supportedArchitecture()}-staging")
             if (staging.exists()) staging.deleteRecursively()
             staging.mkdirs()
@@ -89,25 +75,18 @@ class JavaRuntimeManager(private val context: Context) {
         }
     }
 
-    fun installedRuntimes(): List<JavaRuntime> = root.listFiles().orEmpty()
-        .flatMap { versionDir ->
-            val major = versionDir.name.removePrefix("java").toIntOrNull() ?: return@flatMap emptyList()
-            versionDir.listFiles().orEmpty().mapNotNull { archDir ->
-                val java = File(archDir, "bin/java")
-                if (java.isFile) {
-                    runCatching { ensureExecutable(java) }.getOrNull()
-                    if (java.canExecute()) JavaRuntime(major, archDir.name, archDir.absolutePath, java.absolutePath, true) else null
-                } else null
-            }
+    fun installedRuntimes(): List<JavaRuntime> = root.listFiles().orEmpty().flatMap { versionDir ->
+        val major = versionDir.name.removePrefix("java").toIntOrNull() ?: return@flatMap emptyList()
+        versionDir.listFiles().orEmpty().mapNotNull { archDir ->
+            val java = File(archDir, "bin/java")
+            if (java.isFile) {
+                runCatching { ensureExecutable(java) }.getOrNull()
+                if (java.canExecute()) JavaRuntime(major, archDir.name, archDir.absolutePath, java.absolutePath, true) else null
+            } else null
         }
-        .sortedBy { it.majorVersion }
+    }.sortedBy { it.majorVersion }
 
-    private fun installStaging(
-        majorVersion: Int,
-        target: File,
-        staging: File,
-        onProgress: (JavaRuntimeProgress) -> Unit
-    ): JavaRuntime {
+    private fun installStaging(majorVersion: Int, target: File, staging: File, onProgress: (JavaRuntimeProgress) -> Unit): JavaRuntime {
         locateJavaExecutable(staging) ?: error("Java runtime archive does not contain bin/java")
         if (target.exists()) target.deleteRecursively()
         if (!staging.renameTo(target)) error("Unable to install Java runtime")
@@ -131,32 +110,20 @@ class JavaRuntimeManager(private val context: Context) {
     }
 
     private fun extractZipSafely(archive: File, destination: File) {
-        ZipFile(archive).use { zip ->
-            zip.entries().asSequence().forEach { entry ->
-                val output = safeArchivePath(destination, entry.name)
-                if (entry.isDirectory) output.mkdirs() else {
-                    output.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { input -> output.outputStream().use { input.copyTo(it) } }
-                }
-            }
-        }
+        ZipFile(archive).use { zip -> zip.entries().asSequence().forEach { entry ->
+            val output = safeArchivePath(destination, entry.name)
+            if (entry.isDirectory) output.mkdirs() else { output.parentFile?.mkdirs(); zip.getInputStream(entry).use { input -> output.outputStream().use { input.copyTo(it) } } }
+        } }
     }
 
     private fun extractTarXzSafely(archive: File, destination: File) {
-        FileInputStream(archive).use { fileInput ->
-            XZCompressorInputStream(fileInput).use { xzInput ->
-                TarArchiveInputStream(xzInput).use { tar ->
-                    while (true) {
-                        val entry = tar.nextTarEntry ?: break
-                        val output = safeArchivePath(destination, entry.name)
-                        if (entry.isDirectory) output.mkdirs() else {
-                            output.parentFile?.mkdirs()
-                            output.outputStream().use { tar.copyTo(it) }
-                        }
-                    }
-                }
+        FileInputStream(archive).use { fileInput -> XZCompressorInputStream(fileInput).use { xzInput -> TarArchiveInputStream(xzInput).use { tar ->
+            while (true) {
+                val entry = tar.nextTarEntry ?: break
+                val output = safeArchivePath(destination, entry.name)
+                if (entry.isDirectory) output.mkdirs() else { output.parentFile?.mkdirs(); output.outputStream().use { tar.copyTo(it) } }
             }
-        }
+        } } }
     }
 
     private fun safeArchivePath(destination: File, entryName: String): File {
@@ -167,47 +134,25 @@ class JavaRuntimeManager(private val context: Context) {
     }
 
     private fun download(url: String, target: File, expectedSha256: String?, progress: (Long, Long) -> Unit) {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 15_000
-            readTimeout = 120_000
-            setRequestProperty("User-Agent", "AetherLauncher/0.2 Android")
-        }
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply { requestMethod = "GET"; connectTimeout = 15_000; readTimeout = 120_000; setRequestProperty("User-Agent", "AetherLauncher/0.2 Android") }
         try {
             if (connection.responseCode !in 200..299) error("Runtime download failed: HTTP ${connection.responseCode}")
             val total = connection.contentLengthLong.coerceAtLeast(0L)
             var downloaded = 0L
             target.parentFile?.mkdirs()
-            connection.inputStream.use { input ->
-                target.outputStream().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        downloaded += count
-                        progress(downloaded, total)
-                    }
-                }
-            }
-            if (expectedSha256 != null && sha256(target) != expectedSha256.lowercase()) {
-                target.delete()
-                error("Java runtime SHA-256 verification failed")
-            }
-        } finally {
-            connection.disconnect()
-        }
+            connection.inputStream.use { input -> target.outputStream().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) { val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count); downloaded += count; progress(downloaded, total) }
+            } }
+            if (expectedSha256 != null && sha256(target) != expectedSha256.lowercase()) { target.delete(); error("Java runtime SHA-256 verification failed") }
+        } finally { connection.disconnect() }
     }
 
     private fun sha256(file: File): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         FileInputStream(file).use { input ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
+            while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
