@@ -22,7 +22,6 @@ class ModInstaller(private val context: Context) {
                 if (connection.responseCode !in 200..299) error("Mod download failed: HTTP ${connection.responseCode}")
                 connection.inputStream.use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
             } finally { connection.disconnect() }
-
             file.sha1?.let { expected ->
                 val actual = sha1(temp)
                 if (!actual.equals(expected, ignoreCase = true)) { temp.delete(); error("SHA-1 verification failed") }
@@ -33,8 +32,26 @@ class ModInstaller(private val context: Context) {
         }
     }
 
-    fun installedMods(): List<File> = File(context.filesDir, "instances/default/mods").listFiles { f -> f.extension.equals("jar", true) }?.sortedBy { it.name.lowercase() } ?: emptyList()
+    suspend fun installWithDependencies(file: ModFile, provider: ModProvider, gameVersion: String, loader: String): Result<List<File>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val installed = mutableListOf<File>()
+            val visiting = mutableSetOf<String>()
+            suspend fun installTree(current: ModFile) {
+                if (!visiting.add(current.projectId)) return
+                current.dependencies.filter { it.type == "required" }.forEach { dep ->
+                    val projectId = dep.projectId ?: return@forEach
+                    if (projectId != current.projectId) {
+                        provider.getCompatibleFile(projectId, gameVersion, loader).getOrThrow()?.let { installTree(it) }
+                    }
+                }
+                installed += install(current).getOrThrow()
+            }
+            installTree(file)
+            installed
+        }
+    }
 
+    fun installedMods(): List<File> = File(context.filesDir, "instances/default/mods").listFiles { f -> f.extension.equals("jar", true) }?.sortedBy { it.name.lowercase() } ?: emptyList()
     fun remove(file: File): Boolean = file.delete()
 
     private fun sha1(file: File): String {
