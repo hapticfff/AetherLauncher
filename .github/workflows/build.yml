@@ -11,15 +11,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Set up JDK
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+      - name: Install Android LWJGL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ant
+      - name: Set up JDK 8 for Android LWJGL
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "8"
+      - name: Prepare Android LWJGL runtime
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+          JAVA8_HOME: ${{ env.JAVA_HOME }}
+        run: |
+          chmod +x scripts/prepare_lwjgl_android.sh
+          scripts/prepare_lwjgl_android.sh
+      - name: Set up JDK 17 for Aether Launcher
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
