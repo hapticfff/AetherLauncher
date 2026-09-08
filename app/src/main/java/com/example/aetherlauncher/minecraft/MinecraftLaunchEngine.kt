@@ -3,6 +3,7 @@ package com.example.aetherlauncher.minecraft
 import android.content.Context
 import com.example.aetherlauncher.runtime.AndroidRuntimeCatalog
 import com.example.aetherlauncher.runtime.JavaRuntimeManager
+import com.example.aetherlauncher.runtime.NativeJavaProcess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -48,12 +49,11 @@ class MinecraftLaunchEngine(private val context: Context) {
             }
 
             onProgress("Preparing Minecraft runtime")
-            val process = launchDemo(versionId, metadata, runtime.javaExecutable, runtime.directory)
+            val process = launchDemo(versionId, metadata, runtime.directory)
 
             Thread.sleep(1_500)
             if (!process.isAlive) {
-                val log = readLaunchLog(versionId)
-                error("Minecraft exited immediately (code ${process.exitValue()}). ${log.ifBlank { "No Minecraft output was produced." }}")
+                error("Minecraft exited immediately (code ${process.exitValue()}). Check Android logcat for the native Java launcher output.")
             }
 
             onProgress("Minecraft process started")
@@ -64,17 +64,12 @@ class MinecraftLaunchEngine(private val context: Context) {
     private fun launchDemo(
         versionId: String,
         metadata: MinecraftLaunchMetadata,
-        javaExecutable: String,
         runtimeDirectory: String
     ): Process {
         val gameRoot = installer.installationDirectory()
         val versionJar = File(gameRoot, "versions/$versionId/$versionId.jar")
         val libraries = File(gameRoot, "libraries")
         val nativesDirectory = File(gameRoot, "natives/$versionId").apply { mkdirs() }
-        val logFile = File(gameRoot, "logs/latest-launch.log").apply {
-            parentFile?.mkdirs()
-            if (exists()) delete()
-        }
 
         require(versionJar.isFile) { "Minecraft client JAR is missing: ${versionJar.absolutePath}" }
 
@@ -112,8 +107,6 @@ class MinecraftLaunchEngine(private val context: Context) {
         }
 
         val command = mutableListOf<String>()
-        command += javaExecutable
-
         val resolvedJvmArguments = metadata.jvmArguments
             .map(::resolve)
             .filter { it.isNotBlank() }
@@ -149,34 +142,6 @@ class MinecraftLaunchEngine(private val context: Context) {
         if ("--demo" !in gameArguments) gameArguments += "--demo"
         command += gameArguments
 
-        val libraryPath = "${nativesDirectory.absolutePath}${File.pathSeparator}${context.applicationInfo.nativeLibraryDir}"
-        val runtimeLibraryPath = listOf(
-            File(runtimeDirectory, "lib/jli"),
-            File(runtimeDirectory, "lib/server"),
-            File(runtimeDirectory, "lib"),
-            File(runtimeDirectory, "lib/jvm"),
-            nativesDirectory,
-            File(context.applicationInfo.nativeLibraryDir)
-        ).filter { it.isDirectory }.joinToString(File.pathSeparator)
-
-        return ProcessBuilder(command)
-            .directory(gameRoot)
-            .redirectErrorStream(true)
-            .redirectOutput(logFile)
-            .apply {
-                environment()["JAVA_HOME"] = runtimeDirectory
-                environment()["PATH"] = "$runtimeDirectory/bin:${environment()["PATH"].orEmpty()}"
-                environment()["LD_LIBRARY_PATH"] = "$runtimeLibraryPath:${environment()["LD_LIBRARY_PATH"].orEmpty()}"
-            }
-            .start()
-    }
-
-    private fun readLaunchLog(versionId: String): String {
-        val file = File(installer.installationDirectory(), "logs/latest-launch.log")
-        if (!file.isFile) return ""
-        val text = runCatching { file.readText() }.getOrDefault("").trim()
-        if (text.isBlank()) return ""
-        val tail = text.takeLast(4_000)
-        return "Minecraft $versionId log: ${tail.replace('\n', ' ').replace('\r', ' ')}"
+        return NativeJavaProcess(runtimeDirectory, command)
     }
 }
