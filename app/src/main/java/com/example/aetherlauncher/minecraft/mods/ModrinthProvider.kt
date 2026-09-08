@@ -18,7 +18,8 @@ class ModrinthProvider : ModProvider {
                 put(JSONArray().put("versions:$gameVersion"))
                 if (loader != "Vanilla") put(JSONArray().put("categories:$loader"))
             }
-            val url = "$BASE/search?query=${URLEncoder.encode(query, "UTF-8")}&facets=${URLEncoder.encode(facets.toString(), "UTF-8")}&limit=30&index=relevance"
+            val index = if (query.isBlank()) "downloads" else "relevance"
+            val url = "$BASE/search?query=${URLEncoder.encode(query, "UTF-8")}&facets=${URLEncoder.encode(facets.toString(), "UTF-8")}&limit=30&index=$index"
             val root = getJson(url)
             val hits = root.getJSONArray("hits")
             buildList {
@@ -65,7 +66,7 @@ class ModrinthProvider : ModProvider {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"; connectTimeout = 15_000; readTimeout = 20_000
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "AetherLauncher/0.3 Android")
+            setRequestProperty("User-Agent", "hapticfff/AetherLauncher/0.4 (launcher)")
         }
         return try {
             if (connection.responseCode !in 200..299) error("Modrinth request failed: HTTP ${connection.responseCode}")
