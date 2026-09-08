@@ -2,9 +2,12 @@ package com.example.aetherlauncher.minecraft
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.os.Build
+import com.example.aetherlauncher.renderer.RendererActivity
 import com.example.aetherlauncher.renderer.RendererBackend
 import com.example.aetherlauncher.renderer.RendererManager
+import com.example.aetherlauncher.renderer.RendererNative
 import com.example.aetherlauncher.runtime.AndroidRuntimeCatalog
 import com.example.aetherlauncher.runtime.JavaRuntimeManager
 import com.example.aetherlauncher.runtime.NativeJavaProcess
@@ -90,7 +93,23 @@ class MinecraftLaunchEngine(private val context: Context) {
                 }.getOrThrow()
             }
 
+            check(resolvedRenderer == RendererBackend.OPENGL) {
+                "Phase 4.3 Minecraft GLFW bridge currently requires the OpenGL renderer"
+            }
+
             report("Preparing ${resolvedRenderer.label} renderer", force = true)
+            RendererNative.prepareSurface()
+            withContext(Dispatchers.Main) {
+                context.startActivity(
+                    Intent(context, RendererActivity::class.java).apply {
+                        putExtra(RendererActivity.EXTRA_RENDERER, resolvedRenderer.label)
+                    }
+                )
+            }
+            check(RendererNative.awaitSurface(10_000L)) {
+                "Timed out waiting for the Android Minecraft renderer surface"
+            }
+
             val process = launchDemo(versionId, metadata, runtime.directory, resolvedRenderer)
 
             Thread.sleep(1_500)
@@ -157,6 +176,11 @@ class MinecraftLaunchEngine(private val context: Context) {
             .map(::resolve)
             .filter { it.isNotBlank() }
         command += resolvedJvmArguments
+
+        // LWJGL resolves its GLFW native library from this property. The
+        // Aether native library exports the Android GLFW ABI implemented in
+        // renderer_bridge.cpp, so desktop Linux GLFW is not loaded.
+        command += "-Dorg.lwjgl.glfw.libname=aetherlauncher"
 
         if (resolvedJvmArguments.none { it == "-cp" || it == "-classpath" }) {
             command += "-cp"
