@@ -16,13 +16,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Folder
@@ -30,10 +30,11 @@ import androidx.compose.material.icons.filled.Gamepad
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewList
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -341,15 +342,16 @@ private fun SettingsRoot(page: SettingsPage, select: (SettingsPage) -> Unit, ren
 
 @Composable
 private fun SettingsMenu(select: (SettingsPage) -> Unit) {
-    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) {
         PageTitle("SETTINGS", "Aether launcher configuration")
-        SettingRow(Icons.Default.Settings, "Launcher", "Downloads, verification and UI") { select(SettingsPage.LAUNCHER) }
-        SettingRow(Icons.Default.Terminal, "Java runtime", "Runtime and memory") { select(SettingsPage.JAVA) }
-        SettingRow(Icons.Default.Bolt, "Renderer", "OpenGL ES / Vulkan availability") { select(SettingsPage.RENDERER) }
-        SettingRow(Icons.Default.Gamepad, "Controls", "Touch and controller") { select(SettingsPage.CONTROLS) }
-        SettingRow(Icons.Default.Storage, "Performance", "FPS and memory profile") { select(SettingsPage.PERFORMANCE) }
-        SettingRow(Icons.Default.Storage, "Storage", "Runtime and download cache") { select(SettingsPage.STORAGE) }
-        SettingRow(Icons.Default.Info, "Logs", "Diagnostics") { select(SettingsPage.LOGS) }
+        Spacer(Modifier.height(8.dp))
+        SettingRow(Icons.Default.Settings, "Launcher", "Downloads, verification and startup") { select(SettingsPage.LAUNCHER) }
+        SettingRow(Icons.Default.Terminal, "Java runtime", "Runtime, memory and JVM options") { select(SettingsPage.JAVA) }
+        SettingRow(Icons.Default.Bolt, "Video / renderer", "Renderer, surface and synchronization") { select(SettingsPage.RENDERER) }
+        SettingRow(Icons.Default.Gamepad, "Controls", "Touch, mouse, gestures and controller") { select(SettingsPage.CONTROLS) }
+        SettingRow(Icons.Default.Speed, "Performance", "FPS, resolution and performance mode") { select(SettingsPage.PERFORMANCE) }
+        SettingRow(Icons.Default.Storage, "Storage", "Game directory, downloads and cleanup") { select(SettingsPage.STORAGE) }
+        SettingRow(Icons.Default.Info, "Logs", "Diagnostics and launcher log") { select(SettingsPage.LOGS) }
     }
 }
 
@@ -371,22 +373,37 @@ private fun LauncherSettings(instance: LauncherInstance) {
     val prefs = remember { context.getSharedPreferences("aether_launcher_settings", 0) }
     var automatic by remember { mutableStateOf(prefs.getBoolean("auto_download", true)) }
     var verify by remember { mutableStateOf(prefs.getBoolean("verify", true)) }
+    var skipHash by remember { mutableStateOf(prefs.getBoolean("skip_hash", false)) }
     Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         PageTitle("LAUNCHER", "General launcher behavior")
         SwitchSetting("Automatic downloads", "Prepare required files before launch", automatic) { automatic = it; prefs.edit().putBoolean("auto_download", it).apply() }
-        SwitchSetting("Verify downloads", "Validate files before launch", verify) { verify = it; prefs.edit().putBoolean("verify", it).apply() }
-        Text("Selected instance: ${instance.name}", color = MutedText, fontSize = 9.sp)
+        SwitchSetting("Verify downloads", "Validate downloaded files before launch", verify) { verify = it; prefs.edit().putBoolean("verify", it).apply() }
+        SwitchSetting("Skip verification warnings", "Do not stop launch for non-critical verification warnings", skipHash) { skipHash = it; prefs.edit().putBoolean("skip_hash", it).apply() }
+        InfoCard("Selected instance", instance.name)
     }
 }
 
 @Composable
 private fun JavaSettings(instance: LauncherInstance, save: (LauncherInstance) -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("aether_java_settings", 0) }
     var ram by remember { mutableFloatStateOf(instance.maxRamMb.toFloat()) }
-    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        PageTitle("JAVA RUNTIME", "Java ${instance.javaMajor} • ${instance.maxRamMb} MB")
-        Text("Java ${instance.javaMajor}", color = PrimaryText, fontWeight = FontWeight.Bold)
-        Text("RAM limit: ${ram.toInt()} MB", color = MutedText, fontSize = 10.sp)
-        Slider(value = ram, onValueChange = { ram = it; save(instance.copy(maxRamMb = it.toInt())) }, valueRange = 768f..8192f)
+    var sandbox by remember { mutableStateOf(prefs.getBoolean("sandbox", false)) }
+    var args by remember { mutableStateOf(instance.jvmArgs) }
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) {
+        PageTitle("JAVA RUNTIME", "Java ${instance.javaMajor} • per-instance configuration")
+        Spacer(Modifier.height(10.dp))
+        InfoCard("Java runtime", "Java ${instance.javaMajor}")
+        Spacer(Modifier.height(8.dp))
+        Text("RAM limit: ${ram.toInt()} MB", color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Slider(value = ram, onValueChange = { ram = it }, onValueChangeFinished = { save(instance.copy(maxRamMb = ram.toInt())) }, valueRange = 768f..8192f)
+        Spacer(Modifier.height(4.dp))
+        Text("JVM arguments", color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Text(args.ifBlank { "No custom JVM arguments" }, color = MutedText, fontSize = 10.sp)
+        Spacer(Modifier.height(4.dp))
+        OutlinedButton(onClick = { args = if (args.isBlank()) "-XX:+UseG1GC" else ""; save(instance.copy(jvmArgs = args)) }) { Text(if (args.isBlank()) "ADD SAFE DEFAULT" else "CLEAR JVM ARGS") }
+        Spacer(Modifier.height(4.dp))
+        SwitchSetting("Sandbox JAR execution", "Allow launching an external Java JAR from the launcher", sandbox) { sandbox = it; prefs.edit().putBoolean("sandbox", it).apply() }
     }
 }
 
@@ -394,47 +411,119 @@ private fun JavaSettings(instance: LauncherInstance, save: (LauncherInstance) ->
 private fun RendererSettings(current: RendererBackend, set: (RendererBackend) -> Unit) {
     val context = LocalContext.current
     val availability = remember { RendererManager.availability(context) }
-    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        PageTitle("RENDERER", "Device graphics capabilities")
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) {
+        PageTitle("VIDEO / RENDERER", "Rendering options")
+        Spacer(Modifier.height(10.dp))
+        Text("Renderer", color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Text("The selected backend is stored with the current instance.", color = MutedText, fontSize = 9.sp)
+        Spacer(Modifier.height(6.dp))
         for (backend in RendererBackend.entries) {
             val available = when (backend) {
                 RendererBackend.AUTO -> true
                 RendererBackend.OPENGL -> availability.openGl
                 RendererBackend.VULKAN -> availability.vulkan
             }
-            SettingRow(Icons.Default.Bolt, backend.label, if (available) "Available" else "Unavailable") { if (available) set(backend) }
+            ChoiceRow(backend.label, when (backend) {
+                RendererBackend.AUTO -> "Let Aether choose the available backend"
+                RendererBackend.OPENGL -> "OpenGL ES path"
+                RendererBackend.VULKAN -> "Vulkan-capable path"
+            }, current == backend, available) { if (available) set(backend) }
         }
+        Spacer(Modifier.height(12.dp))
+        RendererExtraSettings()
     }
 }
 
 @Composable
+private fun RendererExtraSettings() {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("aether_video_settings", 0) }
+    var notch by remember { mutableStateOf(prefs.getBoolean("ignore_notch", false)) }
+    var sustained by remember { mutableStateOf(prefs.getBoolean("sustained", false)) }
+    var alternateSurface by remember { mutableStateOf(prefs.getBoolean("alternate_surface", false)) }
+    var vsync by remember { mutableStateOf(prefs.getBoolean("vsync", true)) }
+    var zinkVsync by remember { mutableStateOf(prefs.getBoolean("zink_vsync", true)) }
+    SwitchSetting("Ignore display cutout", "Use the full display area when supported", notch) { notch = it; prefs.edit().putBoolean("ignore_notch", it).apply() }
+    SwitchSetting("Sustained performance", "Request a sustained-performance mode from Android", sustained) { sustained = it; prefs.edit().putBoolean("sustained", it).apply() }
+    SwitchSetting("Alternate surface rendering", "Use the alternate Android surface path when supported", alternateSurface) { alternateSurface = it; prefs.edit().putBoolean("alternate_surface", it).apply() }
+    SwitchSetting("Force VSync", "Synchronize frame presentation with display refresh", vsync) { vsync = it; prefs.edit().putBoolean("vsync", it).apply() }
+    SwitchSetting("VSync with Vulkan/Zink", "Apply the VSync preference to the Vulkan translation path", zinkVsync) { zinkVsync = it; prefs.edit().putBoolean("zink_vsync", it).apply() }
+}
+
+@Composable
 private fun ControlsSettings() {
-    var touch by remember { mutableStateOf(true) }
-    var gamepad by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("aether_controls", 0) }
+    var touch by remember { mutableStateOf(prefs.getBoolean("touch", true)) }
+    var gamepad by remember { mutableStateOf(prefs.getBoolean("gamepad", true)) }
+    var virtualMouse by remember { mutableStateOf(prefs.getBoolean("virtual_mouse", true)) }
+    var gyro by remember { mutableStateOf(prefs.getBoolean("gyro", false)) }
     Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        PageTitle("CONTROLS", "Touch and controller")
-        SwitchSetting("Touch controls", "On-screen controls", touch) { touch = it }
-        SwitchSetting("Gamepad", "Android controller input", gamepad) { gamepad = it }
+        PageTitle("CONTROLS", "Touch, mouse and controller")
+        SwitchSetting("Touch controls", "On-screen controls for Minecraft", touch) { touch = it; prefs.edit().putBoolean("touch", it).apply() }
+        SwitchSetting("Gamepad", "Android controller input", gamepad) { gamepad = it; prefs.edit().putBoolean("gamepad", it).apply() }
+        SwitchSetting("Virtual mouse", "Use touch input as a desktop-style mouse", virtualMouse) { virtualMouse = it; prefs.edit().putBoolean("virtual_mouse", it).apply() }
+        SwitchSetting("Gyroscope", "Use device motion where supported by controls", gyro) { gyro = it; prefs.edit().putBoolean("gyro", it).apply() }
+        InfoCard("Control customization", "Per-game control layout and button mapping will use the selected instance profile.")
     }
 }
 
 @Composable
 private fun PerformanceSettings(instance: LauncherInstance, save: (LauncherInstance) -> Unit) {
-    var fps by remember { mutableFloatStateOf(60f) }
-    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        PageTitle("PERFORMANCE", "Android-friendly defaults")
-        Text("FPS limit: ${fps.toInt()}", color = PrimaryText, fontWeight = FontWeight.Bold)
-        Slider(value = fps, onValueChange = { fps = it }, valueRange = 30f..120f)
-        Text("Instance: ${instance.name}", color = MutedText, fontSize = 9.sp)
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("aether_performance", 0) }
+    var fps by remember { mutableFloatStateOf(prefs.getFloat("fps", 60f)) }
+    var resolution by remember { mutableFloatStateOf(prefs.getFloat("resolution", 100f)) }
+    var lowPower by remember { mutableStateOf(prefs.getBoolean("low_power", false)) }
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) {
+        PageTitle("PERFORMANCE", "FPS, resolution and device performance")
+        Spacer(Modifier.height(10.dp))
+        Text("FPS limit: ${fps.toInt()}", color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Slider(value = fps, onValueChange = { fps = it }, onValueChangeFinished = { prefs.edit().putFloat("fps", fps).apply() }, valueRange = 30f..240f)
+        Text("Resolution scale: ${resolution.toInt()}%", color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Slider(value = resolution, onValueChange = { resolution = it }, onValueChangeFinished = { prefs.edit().putFloat("resolution", resolution).apply() }, valueRange = 50f..100f)
+        SwitchSetting("Power-efficient mode", "Prefer lower sustained load when playing", lowPower) { lowPower = it; prefs.edit().putBoolean("low_power", it).apply() }
+        InfoCard("Instance", "${instance.name} • ${instance.minecraftVersion} • ${instance.loader}")
+        Spacer(Modifier.height(4.dp))
         OutlinedButton(onClick = { save(instance) }) { Text("SAVE PROFILE") }
     }
 }
 
 @Composable
 private fun StorageSettings() {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("aether_storage_settings", 0) }
+    var autoClean by remember { mutableStateOf(prefs.getBoolean("auto_clean", false)) }
     Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        PageTitle("STORAGE", "Runtime and downloads")
-        Text("Aether keeps launcher data in app-private storage and reuses downloaded runtime files where safe.", color = MutedText, fontSize = 10.sp)
+        PageTitle("STORAGE", "Game files, runtimes and downloads")
+        InfoCard("Game directory", "Aether app-private storage / Minecraft data")
+        InfoCard("Runtime cache", "Downloaded Java and LWJGL runtime files are reused when possible")
+        SwitchSetting("Automatic cache cleanup", "Remove unused cached downloads when storage is low", autoClean) { autoClean = it; prefs.edit().putBoolean("auto_clean", it).apply() }
+        OutlinedButton(onClick = { LauncherLog.add("Storage cleanup requested") }) { Text("CLEAN UNUSED CACHE") }
+    }
+}
+
+@Composable
+private fun ChoiceRow(title: String, subtitle: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().background(if (selected) SelectedBg else CardBg, RoundedCornerShape(14.dp)).clickable(enabled = enabled, onClick = onClick).padding(13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = if (enabled) PrimaryText else MutedText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(subtitle, color = MutedText, fontSize = 9.sp)
+        }
+        Text(if (selected) "✓" else if (!enabled) "—" else "", color = Accent, fontWeight = FontWeight.Black, fontSize = 18.sp)
+    }
+}
+
+@Composable
+private fun InfoCard(title: String, value: String) {
+    Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(14.dp)) {
+        Column(Modifier.fillMaxWidth().padding(13.dp)) {
+            Text(title, color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(value, color = MutedText, fontSize = 9.sp)
+        }
     }
 }
 
