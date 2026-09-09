@@ -6,21 +6,63 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Gamepad
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.aetherlauncher.account.AccountType
@@ -28,183 +70,410 @@ import com.example.aetherlauncher.account.LauncherAccountStore
 import com.example.aetherlauncher.instance.InstanceStore
 import com.example.aetherlauncher.instance.LauncherInstance
 import com.example.aetherlauncher.minecraft.MinecraftLaunchEngine
-import com.example.aetherlauncher.minecraft.mods.ModInstaller
-import com.example.aetherlauncher.minecraft.mods.ModProject
-import com.example.aetherlauncher.minecraft.mods.ModProvider
-import com.example.aetherlauncher.minecraft.mods.ModrinthProvider
 import com.example.aetherlauncher.renderer.RendererBackend
 import com.example.aetherlauncher.renderer.RendererManager
 import com.example.aetherlauncher.renderer.RendererSettingsStore
-import com.example.aetherlauncher.runtime.JavaRuntimeManager
 import kotlinx.coroutines.launch
 
 private val Bg = Color(0xFF08090C)
-private val Card = Color(0xFF111318)
-private val Selected = Color(0xFF1B1728)
+private val CardBg = Color(0xFF111318)
+private val SelectedBg = Color(0xFF1B1728)
 private val Accent = Color(0xFF7C4DFF)
-private val TextPrimary = Color(0xFFF5F5F5)
-private val Muted = Color(0xFF9296A1)
-private val Good = Color(0xFF42D392)
+private val PrimaryText = Color(0xFFF5F5F5)
+private val MutedText = Color(0xFF9296A1)
+
 private enum class Page { HOME, INSTANCES, MODS, SETTINGS, LOGS }
 private enum class SettingsPage { GENERAL, LAUNCHER, JAVA, RENDERER, CONTROLS, PERFORMANCE, STORAGE, LOGS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        setContent { AetherTheme { FullLauncher() } }
+        setContent { AetherTheme { LauncherRoot() } }
     }
 }
 
-@Composable private fun AetherTheme(content: @Composable () -> Unit) = MaterialTheme(
-    colorScheme = darkColorScheme(background = Bg, surface = Card, primary = Accent, onPrimary = Color.White, onBackground = TextPrimary, onSurface = TextPrimary),
-    content = content
-)
+@Composable
+private fun AetherTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            background = Bg,
+            surface = CardBg,
+            primary = Accent,
+            onPrimary = Color.White,
+            onBackground = PrimaryText,
+            onSurface = PrimaryText
+        ),
+        content = content
+    )
+}
 
-@Composable private fun FullLauncher() {
+@Composable
+private fun LauncherRoot() {
     val context = LocalContext.current
-    val instances = remember { InstanceStore(context) }
+    val instanceStore = remember { InstanceStore(context) }
     val accountStore = remember { LauncherAccountStore(context) }
     val rendererStore = remember { RendererSettingsStore(context) }
     val launchEngine = remember { MinecraftLaunchEngine(context) }
     val scope = rememberCoroutineScope()
+
     var page by remember { mutableStateOf(Page.HOME) }
     var settingsPage by remember { mutableStateOf(SettingsPage.GENERAL) }
-    var list by remember { mutableStateOf(instances.list()) }
-    var selected by remember { mutableStateOf(instances.ensureDefault()) }
-    var accounts by remember { mutableStateOf(accountStore.accounts()) }
+    var instances by remember { mutableStateOf(instanceStore.list()) }
+    var selected by remember { mutableStateOf(instanceStore.ensureDefault()) }
     var account by remember { mutableStateOf(accountStore.selected()) }
     var renderer by remember { mutableStateOf(rendererStore.get()) }
     var launching by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf("Ready") }
 
     LaunchedEffect(Unit) {
         LauncherLog.add("Aether Launcher UI initialized")
-        if (accounts.isEmpty()) accountStore.addOfflineDemo("Offline account")
-        accounts = accountStore.accounts()
-        account = accountStore.selected() ?: accounts.firstOrNull()
+        if (accountStore.accounts().isEmpty()) accountStore.addOfflineDemo("Offline account")
+        account = accountStore.selected() ?: accountStore.accounts().firstOrNull()
     }
+
     BackHandler(enabled = page != Page.HOME) {
-        if (page == Page.SETTINGS && settingsPage != SettingsPage.GENERAL) settingsPage = SettingsPage.GENERAL else page = Page.HOME
+        if (page == Page.SETTINGS && settingsPage != SettingsPage.GENERAL) {
+            settingsPage = SettingsPage.GENERAL
+        } else {
+            page = Page.HOME
+        }
+    }
+
+    fun saveInstance(value: LauncherInstance) {
+        selected = value
+        instanceStore.save(value)
+        instances = instanceStore.list()
     }
 
     fun launch() {
         if (launching) return
         if (account?.type != AccountType.OFFLINE_DEMO) {
-            error = "Select a supported local test account"
+            status = "Select a supported local test account"
             LauncherLog.add("Launch rejected: unsupported account", "WARN")
             return
         }
         launching = true
-        error = null
-        progress = "Preparing ${selected.minecraftVersion} • ${selected.renderer}…"
-        LauncherLog.add("Launch requested: ${selected.name} / Minecraft ${selected.minecraftVersion} / ${selected.renderer}")
+        status = "Preparing Minecraft ${selected.minecraftVersion}…"
+        LauncherLog.add("Launch requested: ${selected.name}")
         scope.launch {
-            val r = RendererBackend.fromLabel(selected.renderer)
-            launchEngine.installAndLaunchDemo(selected.minecraftVersion, r) { step ->
-                progress = step
+            val backend = RendererBackend.fromLabel(selected.renderer)
+            launchEngine.installAndLaunchDemo(selected.minecraftVersion, backend) { step ->
+                status = step
                 LauncherLog.add(step)
             }.onSuccess {
-                progress = "Minecraft process started"
+                status = "Minecraft process started"
                 launching = false
-                LauncherLog.add("Minecraft process started", "INFO")
             }.onFailure {
-                error = it.message ?: "Launch failed"
+                status = it.message ?: "Launch failed"
                 launching = false
-                LauncherLog.add(error ?: "Launch failed", "ERROR")
+                LauncherLog.add(status, "ERROR")
             }
         }
     }
 
-    Scaffold(containerColor = Bg, bottomBar = { NavigationBar(containerColor = Card) {
-        NavigationBarItem(selected = page == Page.HOME, onClick = { page = Page.HOME }, icon = { Icon(Icons.Default.PlayArrow, null) }, label = { Text("Play", fontSize = 10.sp) })
-        NavigationBarItem(selected = page == Page.INSTANCES, onClick = { page = Page.INSTANCES }, icon = { Icon(Icons.Default.ViewList, null) }, label = { Text("Instances", fontSize = 10.sp) })
-        NavigationBarItem(selected = page == Page.MODS, onClick = { page = Page.MODS }, icon = { Icon(Icons.Default.Extension, null) }, label = { Text("Mods", fontSize = 10.sp) })
-        NavigationBarItem(selected = page == Page.SETTINGS, onClick = { page = Page.SETTINGS }, icon = { Icon(Icons.Default.Settings, null) }, label = { Text("Settings", fontSize = 10.sp) })
-        NavigationBarItem(selected = page == Page.LOGS, onClick = { page = Page.LOGS }, icon = { Icon(Icons.Default.Info, null) }, label = { Text("Logs", fontSize = 10.sp) })
-    } }) { pad -> Box(Modifier.padding(pad).fillMaxSize()) {
-        when (page) {
-            Page.HOME -> HomePage(selected, account?.name ?: "No account", renderer, launching, progress, error, { launch() }, { page = Page.INSTANCES }, { page = Page.MODS }, { page = Page.SETTINGS }, { page = Page.LOGS })
-            Page.INSTANCES -> InstancesPage(list, selected, { instance -> selected = instance; page = Page.HOME }, { val n = LauncherInstance(java.util.UUID.randomUUID().toString(), "New Instance", selected.minecraftVersion, selected.loader, selected.javaMajor, selected.renderer, selected.maxRamMb); instances.save(n); list = instances.list(); LauncherLog.add("Created instance: ${n.name}") }, { id -> instances.delete(id); list = instances.list(); if (selected.id == id) selected = instances.ensureDefault(); LauncherLog.add("Deleted instance: $id") })
-            Page.MODS -> ModsPage(selected.minecraftVersion, selected.loader)
-            Page.SETTINGS -> SettingsRoot(settingsPage, { settingsPage = it }, renderer, { renderer = it; rendererStore.set(it); selected = selected.copy(renderer = it.label); instances.save(selected); list = instances.list(); LauncherLog.add("Renderer changed to ${it.label}") }, selected, { value -> selected = value; instances.save(value); list = instances.list(); LauncherLog.add("Instance settings saved") }, { page = Page.LOGS })
-            Page.LOGS -> LogsPage()
+    Scaffold(
+        containerColor = Bg,
+        bottomBar = {
+            NavigationBar(containerColor = CardBg) {
+                NavigationBarItem(page == Page.HOME, { page = Page.HOME }, { Icon(Icons.Default.PlayArrow, null) }, label = { Text("Play", fontSize = 10.sp) })
+                NavigationBarItem(page == Page.INSTANCES, { page = Page.INSTANCES }, { Icon(Icons.Default.ViewList, null) }, label = { Text("Instances", fontSize = 10.sp) })
+                NavigationBarItem(page == Page.MODS, { page = Page.MODS }, { Icon(Icons.Default.Extension, null) }, label = { Text("Mods", fontSize = 10.sp) })
+                NavigationBarItem(page == Page.SETTINGS, { page = Page.SETTINGS }, { Icon(Icons.Default.Settings, null) }, label = { Text("Settings", fontSize = 10.sp) })
+                NavigationBarItem(page == Page.LOGS, { page = Page.LOGS }, { Icon(Icons.Default.Info, null) }, label = { Text("Logs", fontSize = 10.sp) })
+            }
         }
-    } }
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when (page) {
+                Page.HOME -> HomePage(selected, account?.name ?: "No account", launching, status, ::launch) { target -> page = target }
+                Page.INSTANCES -> InstancesPage(instances, selected, ::saveInstance, {
+                    val created = LauncherInstance(
+                        java.util.UUID.randomUUID().toString(),
+                        "New Instance",
+                        selected.minecraftVersion,
+                        selected.loader,
+                        selected.javaMajor,
+                        selected.renderer,
+                        selected.maxRamMb
+                    )
+                    instanceStore.save(created)
+                    instances = instanceStore.list()
+                    LauncherLog.add("Created instance: ${created.name}")
+                }, { id ->
+                    instanceStore.delete(id)
+                    instances = instanceStore.list()
+                    if (selected.id == id) selected = instanceStore.ensureDefault()
+                })
+                Page.MODS -> ModsPage(selected.minecraftVersion, selected.loader)
+                Page.SETTINGS -> SettingsRoot(settingsPage, { settingsPage = it }, renderer, { value ->
+                    renderer = value
+                    rendererStore.set(value)
+                    saveInstance(selected.copy(renderer = value.label))
+                }, selected, ::saveInstance)
+                Page.LOGS -> LogsPage()
+            }
+        }
+    }
 }
 
-@Composable private fun HomePage(i: LauncherInstance, account: String, renderer: RendererBackend, launching: Boolean, progress: String, error: String?, onPlay: () -> Unit, onInstances: () -> Unit, onMods: () -> Unit, onSettings: () -> Unit, onLogs: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
+@Composable
+private fun HomePage(instance: LauncherInstance, account: String, launching: Boolean, status: String, onPlay: () -> Unit, navigate: (Page) -> Unit) {
+    LazyColumn(
+        Modifier.fillMaxSize().background(Bg).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(bottom = 20.dp)
+    ) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AetherLogo(Modifier.size(64.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column { Text("AETHER", color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp); Text("MINECRAFT JAVA LAUNCHER", color = Muted, fontSize = 9.sp, letterSpacing = 1.4.sp) }
+            Text("AETHER", color = PrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Text("MINECRAFT JAVA LAUNCHER", color = MutedText, fontSize = 9.sp, letterSpacing = 1.4.sp)
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                    Text(instance.name, color = PrimaryText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text("Minecraft ${instance.minecraftVersion} • ${instance.loader}", color = MutedText, fontSize = 11.sp)
+                    Text("Java ${instance.javaMajor} • ${instance.maxRamMb} MB • ${instance.renderer}", color = MutedText, fontSize = 10.sp)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = onPlay, enabled = !launching, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(16.dp)) {
+                        Icon(Icons.Default.PlayArrow, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (launching) "LAUNCHING" else "PLAY", fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(status, color = MutedText, fontSize = 10.sp)
                 }
-                Icon(Icons.Default.CloudDone, "Ready", tint = Good)
             }
         }
-        item { Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(22.dp)).padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(58.dp).background(Accent.copy(alpha = .18f), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) { AetherLogo(Modifier.size(48.dp)) }
-                Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text(i.name, color = TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.Bold); Text("Minecraft ${i.minecraftVersion} • ${i.loader}", color = Muted, fontSize = 11.sp); Text("Java ${i.javaMajor} • ${i.maxRamMb} MB • ${i.renderer}", color = Muted, fontSize = 10.sp) }
-            }
-            Spacer(Modifier.height(16.dp)); Button(onClick = onPlay, enabled = !launching, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(17.dp)) { Icon(if (launching) Icons.Default.HourglassTop else Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (launching) "LAUNCHING" else "PLAY", fontWeight = FontWeight.Black, letterSpacing = 1.5.sp) }
-        } }
-        if (launching) item { Text(progress, Modifier.fillMaxWidth(), color = Muted, fontSize = 10.sp, textAlign = TextAlign.Center) }
-        error?.let { e -> item { Surface(Modifier.fillMaxWidth(), color = Selected, shape = RoundedCornerShape(14.dp)) { Text("Launch error: $e", Modifier.padding(13.dp), color = TextPrimary, fontSize = 10.sp) } } }
-        item { Text("Quick access", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
-        item { QuickGrid(onInstances, onMods, onSettings, onLogs) }
-        item { Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(16.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AccountCircle, null, tint = Accent); Spacer(Modifier.width(10.dp)); Column { Text(account, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp); Text("Account profile", color = Muted, fontSize = 9.sp) } } }
+        item { Text("Account: $account", color = MutedText, fontSize = 10.sp) }
+        item { QuickActions(navigate) }
     }
 }
 
-@Composable private fun QuickGrid(instances: () -> Unit, mods: () -> Unit, settings: () -> Unit, logs: () -> Unit) {
+@Composable
+private fun QuickActions(navigate: (Page) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { QuickCard(Modifier.weight(1f), Icons.Default.ViewList, "Instances", "Profiles", instances); QuickCard(Modifier.weight(1f), Icons.Default.Extension, "Mods", "Discover + install", mods) }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { QuickCard(Modifier.weight(1f), Icons.Default.Settings, "Settings", "Java • graphics • controls", settings); QuickCard(Modifier.weight(1f), Icons.Default.Info, "Logs", "Launcher diagnostics", logs) }
-    }
-}
-@Composable private fun QuickCard(m: Modifier, icon: ImageVector, title: String, sub: String, onClick: () -> Unit) { Column(m.height(92.dp).background(Card, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(13.dp), verticalArrangement = Arrangement.SpaceBetween) { Icon(icon, null, tint = Accent); Column { Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp); Text(sub, color = Muted, fontSize = 9.sp) } } }
-
-@Composable private fun InstancesPage(list: List<LauncherInstance>, selected: LauncherInstance, onSelect: (LauncherInstance) -> Unit, onAdd: () -> Unit, onDelete: (String) -> Unit) { Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) { PageHeader("INSTANCES", "Independent Minecraft profiles") { }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { Button(onClick = onAdd, shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Add, null); Text(" NEW") } }; Spacer(Modifier.height(10.dp)); LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(bottom = 20.dp)) { items(list, key = { it.id }) { i -> Row(Modifier.fillMaxWidth().background(if (i.id == selected.id) Selected else Card, RoundedCornerShape(17.dp)).clickable { onSelect(i) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Folder, null, tint = Accent); Spacer(Modifier.width(11.dp)); Column(Modifier.weight(1f)) { Text(i.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp); Text("${i.minecraftVersion} • ${i.loader} • Java ${i.javaMajor}", color = Muted, fontSize = 9.sp); Text("${i.renderer} • ${i.maxRamMb} MB RAM", color = Muted, fontSize = 9.sp) }; IconButton(onClick = { onDelete(i.id) }) { Icon(Icons.Default.DeleteOutline, "Delete", tint = Muted) } } } } } }
-
-@Composable private fun ModsPage(version: String, loader: String) { val provider: ModProvider = remember { ModrinthProvider() }; val installer = remember { ModInstaller(LocalContext.current) }; val scope = rememberCoroutineScope(); var projects by remember { mutableStateOf<List<ModProject>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var query by remember { mutableStateOf("") }; var message by remember { mutableStateOf<String?>(null) }; var installing by remember { mutableStateOf<String?>(null) }; fun search() { scope.launch { loading = true; LauncherLog.add("Mod search: ${query.trim()}"); provider.search(query.trim(), version, loader).onSuccess { projects = it }.onFailure { message = it.message; LauncherLog.add(it.message ?: "Mod search failed", "ERROR") }; loading = false } }; LaunchedEffect(version, loader) { search() }; Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) { PageHeader("MODS", "Recommendations • $version • $loader") {}; OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Search Modrinth mods…") }, leadingIcon = { Icon(Icons.Default.Search, null) }, trailingIcon = { IconButton(onClick = ::search) { Icon(Icons.Default.ArrowForward, "Search") } }); Spacer(Modifier.height(9.dp)); message?.let { Text(it, color = Muted, fontSize = 10.sp) }; if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp)) { items(projects, key = { it.id }) { p -> Row(Modifier.fillMaxWidth().background(if (installing == p.id) Selected else Card, RoundedCornerShape(16.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Extension, null, tint = Accent); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f)) { Text(p.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(p.description, color = Muted, maxLines = 2, fontSize = 9.sp); Text("${p.downloads} downloads", color = Muted, fontSize = 8.sp) }; Button(enabled = installing != p.id, onClick = { scope.launch { installing = p.id; provider.getCompatibleFile(p.id, version, loader).fold({ file -> if (file == null) message = "No compatible release" else installer.installWithDependencies(file, provider, version, loader).fold({ message = "Installed ${it.size} file(s)"; LauncherLog.add("Installed ${it.size} mod file(s)") }, { message = it.message; LauncherLog.add(it.message ?: "Mod install failed", "ERROR") }) }, { message = it.message; LauncherLog.add(it.message ?: "Mod lookup failed", "ERROR") }); installing = null } }, contentPadding = PaddingValues(horizontal = 9.dp), shape = RoundedCornerShape(10.dp)) { Text(if (installing == p.id) "…" else "INSTALL", fontSize = 8.sp) } } } } } }
-
-@Composable private fun SettingsRoot(page: SettingsPage, select: (SettingsPage) -> Unit, renderer: RendererBackend, setRenderer: (RendererBackend) -> Unit, instance: LauncherInstance, saveInstance: (LauncherInstance) -> Unit, openLogs: () -> Unit) {
-    if (page == SettingsPage.GENERAL) SettingsMenu(select)
-    else when (page) {
-        SettingsPage.LAUNCHER -> LauncherSettings(instance)
-        SettingsPage.JAVA -> JavaSettings(instance, saveInstance)
-        SettingsPage.RENDERER -> RendererSettings(renderer, setRenderer)
-        SettingsPage.CONTROLS -> ControlsSettings(instance, saveInstance)
-        SettingsPage.PERFORMANCE -> PerformanceSettings(instance, saveInstance)
-        SettingsPage.STORAGE -> StorageSettings()
-        SettingsPage.LOGS -> { LogsPage(); LaunchedEffect(Unit) { } }
-        SettingsPage.GENERAL -> Unit
+        ActionRow(Icons.Default.ViewList, "Instances", "Manage Minecraft profiles") { navigate(Page.INSTANCES) }
+        ActionRow(Icons.Default.Extension, "Mods", "Browse compatible mods") { navigate(Page.MODS) }
+        ActionRow(Icons.Default.Settings, "Settings", "Java, renderer, controls and storage") { navigate(Page.SETTINGS) }
+        ActionRow(Icons.Default.Info, "Logs", "Launcher diagnostics") { navigate(Page.LOGS) }
     }
 }
 
-@Composable private fun SettingsMenu(select: (SettingsPage) -> Unit) { Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) { Text("SETTINGS", color = TextPrimary, fontSize = 23.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp); Text("Aether launcher configuration", color = Muted, fontSize = 10.sp); Spacer(Modifier.height(18.dp)); listOf(SettingsPage.LAUNCHER to (Icons.Default.Settings to "Launcher"), SettingsPage.JAVA to (Icons.Default.Terminal to "Java runtime"), SettingsPage.RENDERER to (Icons.Default.Bolt to "Renderer & graphics"), SettingsPage.CONTROLS to (Icons.Default.Gamepad to "Controls"), SettingsPage.PERFORMANCE to (Icons.Default.Speed to "Performance & memory"), SettingsPage.STORAGE to (Icons.Default.Storage to "Storage & downloads"), SettingsPage.LOGS to (Icons.Default.Info to "Logs & diagnostics")).forEach { (p, pair) -> SettingRow(pair.first, pair.second, "Configure launcher and per-instance behavior") { select(p) } } } }
-@Composable private fun SettingRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) { Row(Modifier.fillMaxWidth().padding(vertical = 5.dp).background(Card, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(15.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Accent); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(subtitle, color = Muted, fontSize = 9.sp) }; Icon(Icons.Default.ChevronRight, null, tint = Muted) } }
+@Composable
+private fun ActionRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().background(CardBg, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = Accent)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(subtitle, color = MutedText, fontSize = 9.sp)
+        }
+    }
+}
 
-@Composable private fun LauncherSettings(i: LauncherInstance) { val context = LocalContext.current; val prefs = remember { context.getSharedPreferences("aether_launcher_settings", 0) }; var autoDownload by remember { mutableStateOf(prefs.getBoolean("auto_download", true)) }; var verify by remember { mutableStateOf(prefs.getBoolean("verify", true)) }; var keepOpen by remember { mutableStateOf(prefs.getBoolean("keep_open", false)) }; var compact by remember { mutableStateOf(prefs.getBoolean("compact", false)) }; SettingsPanel("LAUNCHER", "Zaith-style grouped launcher controls") { Text("Selected instance: ${i.name}", color = Muted, fontSize = 10.sp); SwitchRow("Automatic downloads", "Prepare required Minecraft libraries and assets", autoDownload) { autoDownload = it; prefs.edit().putBoolean("auto_download", it).apply() }; SwitchRow("Verify downloads", "Check downloaded files before launch", verify) { verify = it; prefs.edit().putBoolean("verify", it).apply() }; SwitchRow("Keep launcher open", "Keep Aether available after starting Minecraft", keepOpen) { keepOpen = it; prefs.edit().putBoolean("keep_open", it).apply() }; SwitchRow("Compact launcher UI", "Use denser spacing on small screens", compact) { compact = it; prefs.edit().putBoolean("compact", it).apply() }; Text("Aether Launcher • Minecraft Java • Android", color = Muted, fontSize = 9.sp) } }
+@Composable
+private fun InstancesPage(list: List<LauncherInstance>, selected: LauncherInstance, select: (LauncherInstance) -> Unit, add: () -> Unit, delete: (String) -> Unit) {
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) {
+        PageTitle("INSTANCES", "Independent Minecraft profiles")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Button(onClick = add, shape = RoundedCornerShape(12.dp)) {
+                Icon(Icons.Default.Add, null)
+                Spacer(Modifier.width(4.dp))
+                Text("NEW")
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
+            items(list, key = { it.id }) { instance ->
+                Row(
+                    Modifier.fillMaxWidth().background(if (instance.id == selected.id) SelectedBg else CardBg, RoundedCornerShape(16.dp)).clickable { select(instance) }.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Folder, null, tint = Accent)
+                    Spacer(Modifier.width(11.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(instance.name, color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("${instance.minecraftVersion} • ${instance.loader} • Java ${instance.javaMajor}", color = MutedText, fontSize = 9.sp)
+                        Text("${instance.renderer} • ${instance.maxRamMb} MB RAM", color = MutedText, fontSize = 9.sp)
+                    }
+                    IconButton(onClick = { delete(instance.id) }) { Icon(Icons.Default.DeleteOutline, "Delete", tint = MutedText) }
+                }
+            }
+        }
+    }
+}
 
-@Composable private fun JavaSettings(i: LauncherInstance, save: (LauncherInstance) -> Unit) { val manager = remember { JavaRuntimeManager(LocalContext.current) }; var selected by remember { mutableIntStateOf(i.javaMajor) }; var ram by remember { mutableFloatStateOf(i.maxRamMb.toFloat()) }; SettingsPanel("JAVA RUNTIME", "Java ${i.javaMajor} • ${i.maxRamMb} MB heap") { val installed = listOf(8, 17, 21).mapNotNull { manager.findInstalled(it) }; Text("Installed / supported runtimes", color = Muted, fontSize = 11.sp); installed.forEach { r -> Choice("Java ${r.majorVersion}", r.majorVersion == selected) { selected = r.majorVersion; save(i.copy(javaMajor = selected)); LauncherLog.add("Java runtime changed to ${r.majorVersion}") } }; if (installed.isEmpty()) Text("No bundled runtime detected yet. The launcher will prepare the required runtime during launch.", color = Muted, fontSize = 10.sp); SliderBlock("Maximum RAM", ram, 768f..8192f, "${ram.toInt()} MB") { ram = it; save(i.copy(maxRamMb = it.toInt())) }; Text("Java 8 is commonly required by older Minecraft versions; modern releases normally use newer Java runtimes.", color = Muted, fontSize = 9.sp) } }
+@Composable
+private fun ModsPage(version: String, loader: String) {
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) {
+        PageTitle("MODS", "Mod management")
+        Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Text("Modrinth integration", color = PrimaryText, fontWeight = FontWeight.Bold)
+                Text("Compatible mods for Minecraft $version / $loader can be prepared here.", color = MutedText, fontSize = 10.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("Use the launcher runtime and instance storage for installed mods.", color = MutedText, fontSize = 9.sp)
+            }
+        }
+    }
+}
 
-@Composable private fun RendererSettings(current: RendererBackend, set: (RendererBackend) -> Unit) { val ctx = LocalContext.current; val a = remember { RendererManager.availability(ctx) }; SettingsPanel("RENDERER", "Backend availability is detected from the device") { RendererBackend.entries.forEach { r -> val available = when (r) { RendererBackend.AUTO -> true; RendererBackend.OPENGL -> a.openGl; RendererBackend.VULKAN -> a.vulkan }; Choice("${r.label} ${if (available) "• available" else "• unavailable"}", current == r, available) { set(r) } }; Text("OpenGL ES uses the Pojav/LWJGL bridge. Vulkan availability does not by itself prove Minecraft Vulkan rendering works; device validation remains required.", color = Muted, fontSize = 9.sp) } }
+@Composable
+private fun SettingsRoot(page: SettingsPage, select: (SettingsPage) -> Unit, renderer: RendererBackend, setRenderer: (RendererBackend) -> Unit, instance: LauncherInstance, save: (LauncherInstance) -> Unit) {
+    if (page == SettingsPage.GENERAL) {
+        SettingsMenu(select)
+    } else {
+        when (page) {
+            SettingsPage.LAUNCHER -> LauncherSettings(instance)
+            SettingsPage.JAVA -> JavaSettings(instance, save)
+            SettingsPage.RENDERER -> RendererSettings(renderer, setRenderer)
+            SettingsPage.CONTROLS -> ControlsSettings()
+            SettingsPage.PERFORMANCE -> PerformanceSettings(instance, save)
+            SettingsPage.STORAGE -> StorageSettings()
+            SettingsPage.LOGS -> LogsPage()
+            SettingsPage.GENERAL -> Unit
+        }
+    }
+}
 
-@Composable private fun ControlsSettings(i: LauncherInstance, save: (LauncherInstance) -> Unit) { var touch by remember { mutableStateOf(true) }; var mouse by remember { mutableStateOf(true) }; var gamepad by remember { mutableStateOf(true) }; var sensitivity by remember { mutableFloatStateOf(1f) }; SettingsPanel("CONTROLS", "Touch, mouse and controller") { SwitchRow("Touch controls", "On-screen Minecraft controls", touch) { touch = it }; SwitchRow("Virtual mouse", "Touch-to-mouse input", mouse) { mouse = it }; SwitchRow("Gamepad", "Android controller input", gamepad) { gamepad = it }; SliderBlock("Look sensitivity", sensitivity, .5f..2f, "${"%.1f".format(sensitivity)}×") { sensitivity = it }; Choice("Save control profile to instance", true) { save(i) } } }
+@Composable
+private fun SettingsMenu(select: (SettingsPage) -> Unit) {
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PageTitle("SETTINGS", "Aether launcher configuration")
+        SettingRow(Icons.Default.Settings, "Launcher", "Downloads, verification and UI") { select(SettingsPage.LAUNCHER) }
+        SettingRow(Icons.Default.Terminal, "Java runtime", "Runtime and memory") { select(SettingsPage.JAVA) }
+        SettingRow(Icons.Default.Bolt, "Renderer", "OpenGL ES / Vulkan availability") { select(SettingsPage.RENDERER) }
+        SettingRow(Icons.Default.Gamepad, "Controls", "Touch and controller") { select(SettingsPage.CONTROLS) }
+        SettingRow(Icons.Default.Storage, "Performance", "FPS and memory profile") { select(SettingsPage.PERFORMANCE) }
+        SettingRow(Icons.Default.Storage, "Storage", "Runtime and download cache") { select(SettingsPage.STORAGE) }
+        SettingRow(Icons.Default.Info, "Logs", "Diagnostics") { select(SettingsPage.LOGS) }
+    }
+}
 
-@Composable private fun PerformanceSettings(i: LauncherInstance, save: (LauncherInstance) -> Unit) { var fps by remember { mutableFloatStateOf(60f) }; var resolution by remember { mutableFloatStateOf(100f) }; var vsync by remember { mutableStateOf(true) }; SettingsPanel("PERFORMANCE", "Stable defaults for Android") { SliderBlock("FPS limit", fps, 30f..120f, "${fps.toInt()} FPS") { fps = it }; SliderBlock("Resolution scale", resolution, 50f..100f, "${resolution.toInt()}%") { resolution = it }; SwitchRow("VSync", "Reduce tearing and unnecessary GPU work", vsync) { vsync = it }; Choice("Balanced profile", true) { save(i) }; Choice("Battery saver profile", false) { } } }
+@Composable
+private fun SettingRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().background(CardBg, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = Accent)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(subtitle, color = MutedText, fontSize = 9.sp)
+        }
+    }
+}
 
-@Composable private fun StorageSettings() { SettingsPanel("STORAGE", "Runtime, libraries, assets and instances") { Text("Aether keeps Minecraft data in its app-private storage and shares downloaded runtime/libraries where safe.", color = Muted, fontSize = 10.sp); Choice("Keep downloaded libraries", true) {}; Choice("Keep assets cache", true) {}; Choice("Verify downloads", true) {}; Choice("Safe cleanup mode", false) {} } }
+@Composable
+private fun LauncherSettings(instance: LauncherInstance) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("aether_launcher_settings", 0) }
+    var automatic by remember { mutableStateOf(prefs.getBoolean("auto_download", true)) }
+    var verify by remember { mutableStateOf(prefs.getBoolean("verify", true)) }
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PageTitle("LAUNCHER", "General launcher behavior")
+        SwitchSetting("Automatic downloads", "Prepare required files before launch", automatic) { automatic = it; prefs.edit().putBoolean("auto_download", it).apply() }
+        SwitchSetting("Verify downloads", "Validate files before launch", verify) { verify = it; prefs.edit().putBoolean("verify", it).apply() }
+        Text("Selected instance: ${instance.name}", color = MutedText, fontSize = 9.sp)
+    }
+}
 
-@Composable private fun LogsPage() { var refresh by remember { mutableIntStateOf(0) }; var entries by remember(refresh) { mutableStateOf(LauncherLog.snapshot()) }; Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) { PageHeader("LOGS", "Aether diagnostics • ${entries.size} buffered lines") { Row { OutlinedButton(onClick = { LauncherLog.add("Manual log refresh"); entries = LauncherLog.snapshot() }) { Text("REFRESH") }; Spacer(Modifier.width(8.dp)); Button(onClick = { LauncherLog.clear(); refresh++ }, shape = RoundedCornerShape(10.dp)) { Text("CLEAR") } } }; Spacer(Modifier.height(10.dp)); if (entries.isEmpty()) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No launcher logs yet.", color = Muted, fontSize = 12.sp) } } else LazyColumn(Modifier.fillMaxSize().background(Color.Black, RoundedCornerShape(14.dp)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 20.dp)) { items(entries) { line -> Text(line, color = TextPrimary, fontSize = 9.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) } } } }
+@Composable
+private fun JavaSettings(instance: LauncherInstance, save: (LauncherInstance) -> Unit) {
+    var ram by remember { mutableFloatStateOf(instance.maxRamMb.toFloat()) }
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PageTitle("JAVA RUNTIME", "Java ${instance.javaMajor} • ${instance.maxRamMb} MB")
+        Text("Java ${instance.javaMajor}", color = PrimaryText, fontWeight = FontWeight.Bold)
+        Text("RAM limit: ${ram.toInt()} MB", color = MutedText, fontSize = 10.sp)
+        Slider(value = ram, onValueChange = { ram = it; save(instance.copy(maxRamMb = it.toInt())) }, valueRange = 768f..8192f)
+    }
+}
 
-@Composable private fun SettingsPanel(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) { LazyColumn(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 20.dp)) { item { Text(title, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp); Text(subtitle, color = Muted, fontSize = 10.sp) }; item { Column(verticalArrangement = Arrangement.spacedBy(9.dp), content = content) } } }
-@Composable private fun Choice(title: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) { Row(Modifier.fillMaxWidth().background(if (selected) Selected else Card, RoundedCornerShape(14.dp)).clickable(enabled = enabled, onClick = onClick).padding(13.dp), verticalAlignment = Alignment.CenterVertically) { Text(title, Modifier.weight(1f), color = if (enabled) TextPrimary else Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold); if (selected) Icon(Icons.Default.CheckCircle, null, tint = Accent) } }
-@Composable private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) { Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(14.dp)).padding(13.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp); Text(subtitle, color = Muted, fontSize = 9.sp) }; Switch(checked, onChange) } }
-@Composable private fun SliderBlock(title: String, value: Float, range: ClosedFloatingPointRange<Float>, valueText: String, onChange: (Float) -> Unit) { Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(14.dp)).padding(13.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp); Text(valueText, color = Accent, fontSize = 11.sp) }; Slider(value = value, onValueChange = onChange, valueRange = range) } }
-@Composable private fun PageHeader(title: String, subtitle: String, trailing: @Composable () -> Unit) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, color = TextPrimary, fontSize = 23.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp); Text(subtitle, color = Muted, fontSize = 10.sp) }; trailing() } }
+@Composable
+private fun RendererSettings(current: RendererBackend, set: (RendererBackend) -> Unit) {
+    val context = LocalContext.current
+    val availability = remember { RendererManager.availability(context) }
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PageTitle("RENDERER", "Device graphics capabilities")
+        for (backend in RendererBackend.entries) {
+            val available = when (backend) {
+                RendererBackend.AUTO -> true
+                RendererBackend.OPENGL -> availability.openGl
+                RendererBackend.VULKAN -> availability.vulkan
+            }
+            SettingRow(Icons.Default.Bolt, backend.label, if (available) "Available" else "Unavailable") { if (available) set(backend) }
+        }
+    }
+}
+
+@Composable
+private fun ControlsSettings() {
+    var touch by remember { mutableStateOf(true) }
+    var gamepad by remember { mutableStateOf(true) }
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PageTitle("CONTROLS", "Touch and controller")
+        SwitchSetting("Touch controls", "On-screen controls", touch) { touch = it }
+        SwitchSetting("Gamepad", "Android controller input", gamepad) { gamepad = it }
+    }
+}
+
+@Composable
+private fun PerformanceSettings(instance: LauncherInstance, save: (LauncherInstance) -> Unit) {
+    var fps by remember { mutableFloatStateOf(60f) }
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PageTitle("PERFORMANCE", "Android-friendly defaults")
+        Text("FPS limit: ${fps.toInt()}", color = PrimaryText, fontWeight = FontWeight.Bold)
+        Slider(value = fps, onValueChange = { fps = it }, valueRange = 30f..120f)
+        Text("Instance: ${instance.name}", color = MutedText, fontSize = 9.sp)
+        OutlinedButton(onClick = { save(instance) }) { Text("SAVE PROFILE") }
+    }
+}
+
+@Composable
+private fun StorageSettings() {
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PageTitle("STORAGE", "Runtime and downloads")
+        Text("Aether keeps launcher data in app-private storage and reuses downloaded runtime files where safe.", color = MutedText, fontSize = 10.sp)
+    }
+}
+
+@Composable
+private fun SwitchSetting(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().background(CardBg, RoundedCornerShape(14.dp)).padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = PrimaryText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(subtitle, color = MutedText, fontSize = 9.sp)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun LogsPage() {
+    var refresh by remember { mutableIntStateOf(0) }
+    val entries = remember(refresh) { LauncherLog.snapshot() }
+    Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) {
+        PageTitle("LOGS", "Aether diagnostics")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { LauncherLog.add("Manual log refresh"); refresh++ }) { Text("REFRESH") }
+            Button(onClick = { LauncherLog.clear(); refresh++ }) { Text("CLEAR") }
+        }
+        Spacer(Modifier.height(10.dp))
+        if (entries.isEmpty()) {
+            Text("No launcher logs yet.", color = MutedText, fontSize = 12.sp)
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(entries) { line -> Text(line, color = PrimaryText, fontSize = 9.sp) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PageTitle(title: String, subtitle: String) {
+    Column {
+        Text(title, color = PrimaryText, fontSize = 23.sp, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
+        Text(subtitle, color = MutedText, fontSize = 10.sp)
+    }
+}
